@@ -1,6 +1,6 @@
 # ccui
 
-TUI for browsing and managing Claude Code sessions, plans, notes, and project config.
+TUI for browsing and managing Claude Code sessions, plans, notes, skills, and rules.
 
 ## Install
 
@@ -20,107 +20,101 @@ ccui
 
 ### Timeline View (default)
 
-All sessions across projects, sorted by most recent:
-
-```
- Project     │ Title                     │ Msgs │ Date    │
- ────────────┼───────────────────────────┼──────┼─────────┼─────
-▸ my-project │ refactor auth module      │  42  │ Feb 28  │
-  another    │ add TUI dashboard         │ 120  │ Mar 02  │
-  my-project │ fix streaming bug         │  93  │ Mar 01  │ [A]
-```
+All sessions across projects, sorted by most recent.
 
 ### Project View
 
-Left: project list. Right: 4 tabs — Sessions, Plans, Notes, Config.
+Left: project list. Right: 6 tabs — Sessions, Plans, Notes, Skills, Rules, Config.
 
-```
-  Projects       ║  [Sessions]  Plans  Notes  Config
-  ─────────      ║  ──────────────────────────────────
-▸ my-project (15)║  Title                     │ Msgs │ Date
-  another    (6) ║▸ refactor auth module      │  42  │ Feb 28
-  side-proj  (1) ║  fix streaming bug         │  93  │ Mar 01
-```
-
-Switch tabs with `1` `2` `3` `4`.
+Switch tabs with `h`/`l` or `1`–`6`.
 
 ## Keybindings
 
+### Global
+
 | Key | Action |
 |-----|--------|
-| `j` / `k` or `↑` / `↓` | Navigate up/down |
-| `Enter` or `l` | View session detail / plan / note |
 | `Tab` | Switch Timeline ↔ Project view |
-| `1` `2` `3` `4` | Switch to Sessions / Plans / Notes / Config tab |
-| `d` | Delete session / plan / note |
-| `a` | Toggle archive on session |
-| `H` (shift+h) | Toggle show/hide archived sessions |
-| `r` | Rename session title / plan / note |
-| `n` | New plan or note (opens `$EDITOR`) |
-| `e` | Edit plan / note / CLAUDE.md in `$EDITOR` |
-| `x` | Export session as plan or note |
 | `/` | Search / filter |
-| `g` / `G` | Jump to top / bottom |
+| `T` | Cycle theme |
+| `R` | Reload all data |
 | `q` | Quit |
 | `Esc` | Back / close search |
+
+### Navigation (Vim-style)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or `↑` / `↓` | Move cursor up/down |
+| `g` / `G` | Jump to top / bottom |
+| `h` / `l` | Previous / next tab (Project view) |
+| `1`–`6` | Jump to tab by number (Project view) |
+
+### Actions
+
+| Key | Action | Applies to |
+|-----|--------|------------|
+| `Enter` | View detail | Sessions, Plans, Notes, Skills, Rules |
+| `o` | Resume session in Claude Code | Sessions |
+| `d` | Delete with confirmation | Sessions, Plans, Notes |
+| `a` | Toggle archive | Sessions |
+| `H` | Toggle show/hide archived | Sessions |
+| `r` | Rename | Plans, Notes |
+| `n` | Create new (opens `$EDITOR`) | Plans, Notes |
+| `e` | Edit in `$EDITOR` | Plans, Notes, Skills, Rules, CLAUDE.md |
+| `x` | Export session as plan or note | Sessions |
+
+### Content Viewer
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Scroll down / up |
+| `h` / `l` | Scroll left / right |
+| `g` / `G` | Jump to top / bottom |
+| `x` | Export to plan/note |
+| `o` | Resume session |
+| `Esc` / `q` | Back |
 
 ## Features
 
 ### Session Management
 
 - Browse all Claude Code sessions across projects
-- Preview first few messages inline
-- Custom titles (`r` to rename, stored in `~/.claude/session-titles.json`)
-- Archive sessions (`a` to toggle, `H` to show/hide archived)
+- Display session name from CC's `/rename` (customTitle), fallback to session ID
+- Inline preview: summary + first few messages
+- Resume sessions directly (`o` → runs `claude --resume` with correct project cwd)
+- Archive sessions (`a` to toggle, `H` to show/hide)
+- Export conversations as plans or notes
 - Delete sessions with confirmation
+
+### Session Summaries
+
+Use the `/ccui-summary` skill inside Claude Code to generate a short name and one-line summary for the current session. The skill:
+
+1. Generates a 1–2 word name and sets it via `/rename`
+2. Saves a one-line summary to `~/.claude/ccui-summaries.json`
+
+Summaries appear in the preview area with a `▸` prefix and are included in search.
 
 ### Plans & Notes
 
-Stored in `{project}/.claude/plans/*.md` and `{project}/.claude/notes/*.md`.
+Stored in `{project}/.claude/plans/*.md` and `{project}/.claude/notes/*.md` with YAML frontmatter. Create, view, edit, rename, delete, and link to sessions.
 
-Each file has YAML frontmatter:
+### Skills & Rules
 
-```yaml
----
-title: refactor auth module
-created: 2025-03-01
-session: a1b2c3d4-...   # optional, linked session id
----
-```
-
-- `n` to create new (opens in `$EDITOR`)
-- `e` to edit existing
-- `x` to export a session conversation as a plan or note
-- Plans can link to a session — shows `→ session title` in the list
+Browse and edit skills (`.claude/skills/`) and rules (`.claude/rules/`), both project-level and global (`~/.claude/`).
 
 ### Project Config
 
-The Config tab shows a read-only overview of a project's Claude Code configuration:
+Read-only overview of CLAUDE.md, Auto Memory, and settings.local.json. Press `e` to edit CLAUDE.md.
 
-- **CLAUDE.md** — existence and line count
-- **Auto Memory** — MEMORY.md status and topic files
-- **settings.local.json** — permission rule count
-- **Rules** (`.claude/rules/`) — rule files and their path scopes
-- **Skills** — project-level and global skills
+### Themes
 
-## Data Locations
+Cycle through 10 themes with `T` (persisted across sessions):
 
-| Data | Location |
-|------|----------|
-| Sessions | `~/.claude/projects/{project}/*.jsonl` (Claude Code native) |
-| Plans | `{project}/.claude/plans/*.md` |
-| Notes | `{project}/.claude/notes/*.md` |
-| Session titles | `~/.claude/session-titles.json` |
-| Archive state | `~/.claude/session-archives.json` |
+Light: quiet-light (default), textual-light, catppuccin-latte, solarized-light
+Dark: textual-dark, nord, dracula, tokyo-night, gruvbox, catppuccin-mocha
 
-## Project Structure
+### Search
 
-```
-src/ccui/
-├── app.py        # Textual TUI
-├── data.py       # Session scanning and parsing
-├── archive.py    # Archive state management
-├── titles.py     # Custom session titles
-├── notes.py      # Plan/note CRUD
-└── config.py     # Project config scanning (CLAUDE.md, rules, memory, skills, settings)
-```
+Press `/` to filter across session titles, summaries, project names, and git branches.
