@@ -322,11 +322,15 @@ class ItemListScreen(BaseViewScreen):
         if not handler or not item:
             return
         session_id = getattr(item, "session_id", "")
+        project_path = getattr(item, "project_path", "")
         if not session_id:
             self.notify("Not a session", severity="warning")
             return
         with self.app.suspend():
-            subprocess.call(["claude", "--resume", session_id])
+            subprocess.call(
+                ["claude", "--resume", session_id],
+                cwd=project_path or None,
+            )
         self._refresh_all()
 
     def _action_export_item(self) -> None:

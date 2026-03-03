@@ -93,7 +93,10 @@ class ContentViewScreen(ModalScreen[None]):
             return
         self.dismiss(None)
         with self.app.suspend():
-            subprocess.call(["claude", "--resume", self._session.session_id])
+            subprocess.call(
+                ["claude", "--resume", self._session.session_id],
+                cwd=self._session.project_path or None,
+            )
 
     def action_export(self) -> None:
         if not self._session or not self._project_path:
