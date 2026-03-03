@@ -37,6 +37,7 @@ class ProjectScreen(ItemListScreen):
         "n": "_action_new_item",
         "e": "_action_edit_external",
         "x": "_action_export_item",
+        "o": "_action_resume_session",
         "h": "_action_tab_prev",
         "l": "_action_tab_next",
         "1": "_action_goto_tab_1",
@@ -140,7 +141,7 @@ class ProjectScreen(ItemListScreen):
             status += f" | /{self.store.search_query}"
         self.query_one("#status-bar", Static).update(status)
         self.query_one("#help-bar", Static).update(
-            " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  Enter:Open"
+            " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  Enter:Open  o:Resume"
             "  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search  T:Theme"
         )
 
@@ -207,9 +208,8 @@ class ProjectScreen(ItemListScreen):
                 self.notify(notify_msg)
             if editor_path:
                 editor = os.environ.get("EDITOR", "vim")
-                self.app.suspend()
-                subprocess.call([editor, str(editor_path)])
-                self.app.resume()
+                with self.app.suspend():
+                    subprocess.call([editor, str(editor_path)])
                 self._refresh_all()
 
         self.app.push_screen(

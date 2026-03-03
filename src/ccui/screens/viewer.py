@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -23,6 +24,7 @@ class ContentViewScreen(ModalScreen[None]):
         Binding("escape", "back", "Back", priority=True),
         Binding("q", "back", "Back", priority=True),
         Binding("x", "export", "Export to plan/note", priority=True),
+        Binding("o", "resume", "Resume session", priority=True),
         Binding("j", "scroll_down", "Down", show=False, priority=True),
         Binding("k", "scroll_up", "Up", show=False, priority=True),
         Binding("h", "cursor_left", "Left", show=False, priority=True),
@@ -85,6 +87,14 @@ class ContentViewScreen(ModalScreen[None]):
 
     def action_back(self) -> None:
         self.dismiss(None)
+
+    def action_resume(self) -> None:
+        if not self._session:
+            self.notify("No session to resume", severity="warning")
+            return
+        self.dismiss(None)
+        with self.app.suspend():
+            subprocess.call(["claude", "--resume", self._session.session_id])
 
     def action_export(self) -> None:
         if not self._session or not self._project_path:

@@ -20,6 +20,7 @@ class TimelineScreen(ItemListScreen):
         "H": "_action_toggle_show_archived",
         "r": "_action_rename",
         "x": "_action_export_item",
+        "o": "_action_resume_session",
     }
 
     def __init__(self) -> None:
@@ -68,6 +69,6 @@ class TimelineScreen(ItemListScreen):
             status += f" | /{self.store.search_query}"
         self.query_one("#status-bar", Static).update(status)
         self.query_one("#help-bar", Static).update(
-            " q:Quit  Tab:View  Enter:Open  d:Del  a:Archive"
+            " q:Quit  Tab:View  Enter:Open  o:Resume  d:Del  a:Archive"
             "  H:Hidden  r:Rename  x:Export  /:Search  T:Theme"
         )

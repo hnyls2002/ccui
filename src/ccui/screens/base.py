@@ -311,6 +311,18 @@ class ItemListScreen(BaseViewScreen):
             return
         self._open_in_editor(path)
 
+    def _action_resume_session(self) -> None:
+        handler, item = self._get_active_item()
+        if not handler or not item:
+            return
+        session_id = getattr(item, "session_id", "")
+        if not session_id:
+            self.notify("Not a session", severity="warning")
+            return
+        with self.app.suspend():
+            subprocess.call(["claude", "--resume", session_id])
+        self._refresh_all()
+
     def _action_export_item(self) -> None:
         handler, item = self._get_active_item()
         if not handler or not item:
@@ -362,9 +374,8 @@ class ItemListScreen(BaseViewScreen):
 
     def _open_in_editor(self, path: Path) -> None:
         editor = os.environ.get("EDITOR", "vim")
-        self.app.suspend()
-        subprocess.call([editor, str(path)])
-        self.app.resume()
+        with self.app.suspend():
+            subprocess.call([editor, str(path)])
         self._refresh_all()
 
     # ── Vim navigation ────────────────────────────────────────────────
