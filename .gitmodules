@@ -1,0 +1,3 @@
+[submodule "third_party/pre-commit-config"]
+	path = third_party/pre-commit-config
+	url = git@github.com:hnyls2002/pre-commit-config.git
