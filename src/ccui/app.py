@@ -13,7 +13,6 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
-    Footer,
     Header,
     Input,
     Label,
@@ -54,10 +53,20 @@ class ConfirmDialog(ModalScreen[bool]):
         Binding("y", "confirm", "Yes"),
         Binding("n", "cancel", "No"),
         Binding("escape", "cancel", "Cancel"),
+        Binding("q", "cancel", "Cancel"),
     ]
     DEFAULT_CSS = """
-    ConfirmDialog { align: center middle; }
-    #confirm-box { width: 50; height: 7; border: thick $accent; background: $surface; padding: 1 2; }
+    ConfirmDialog { align: center middle; background: rgba(0, 0, 0, 0.6); }
+    #confirm-box {
+        width: 60;
+        height: auto;
+        max-height: 10;
+        border: thick $error;
+        background: $surface;
+        padding: 1 2;
+    }
+    #confirm-msg { margin-bottom: 1; text-style: bold; }
+    #confirm-hint { color: $text-muted; }
     """
 
     def __init__(self, message: str) -> None:
@@ -66,8 +75,8 @@ class ConfirmDialog(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-box"):
-            yield Label(self._message)
-            yield Label("[y]es / [n]o", classes="dim")
+            yield Label(self._message, id="confirm-msg")
+            yield Label("  y = confirm  |  n / q / Esc = cancel", id="confirm-hint")
 
     def action_confirm(self) -> None:
         self.dismiss(True)
@@ -112,9 +121,9 @@ class InputDialog(ModalScreen[str | None]):
 
 class ContentViewScreen(ModalScreen[None]):
     BINDINGS = [
-        Binding("escape", "back", "Back"),
-        Binding("q", "back", "Back"),
-        Binding("x", "export", "Export to plan/note"),
+        Binding("escape", "back", "Back", priority=True),
+        Binding("q", "back", "Back", priority=True),
+        Binding("x", "export", "Export to plan/note", priority=True),
     ]
     DEFAULT_CSS = """
     ContentViewScreen { align: center middle; }
@@ -186,26 +195,6 @@ class CcuiApp(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("tab", "switch_view", "View", priority=True),
-        Binding("enter", "view_item", "View"),
-        Binding("d", "delete_item", "Delete"),
-        Binding("a", "toggle_archive", "Archive"),
-        Binding("H", "toggle_show_archived", "Hidden", key_display="shift+h"),
-        Binding("r", "rename", "Rename"),
-        Binding("n", "new_item", "New"),
-        Binding("e", "edit_external", "Edit"),
-        Binding("x", "export_session", "Export"),
-        Binding("slash", "search", "Search"),
-        Binding("1", "tab_sessions", "Sessions", show=False),
-        Binding("2", "tab_plans", "Plans", show=False),
-        Binding("3", "tab_notes", "Notes", show=False),
-        Binding("4", "tab_config", "Config", show=False),
-        # Vim
-        Binding("j", "vim_down", show=False),
-        Binding("k", "vim_up", show=False),
-        Binding("l", "view_item", "View", show=False),
-        Binding("g", "scroll_top", "Top", show=False),
-        Binding("G", "scroll_bottom", "Bottom", show=False),
     ]
 
     CSS = """
@@ -215,7 +204,8 @@ class CcuiApp(App):
     #right-panel { width: 1fr; height: 1fr; }
     .session-table { height: 1fr; }
     .preview { height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
-    #status-bar { height: 1; dock: bottom; padding: 0 1; background: $primary; color: $text; }
+    #status-bar { height: 1; padding: 0 1; background: $primary; color: $text; }
+    #help-bar { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
     #search-bar { height: 3; dock: top; display: none; }
     .hidden { display: none; }
     #config-content { padding: 1 2; height: 1fr; overflow-y: auto; }
@@ -275,7 +265,7 @@ class CcuiApp(App):
                         yield Static("", id="config-content")
 
         yield Static("", id="status-bar")
-        yield Footer()
+        yield Static("", id="help-bar")
 
     def on_mount(self) -> None:
         self._load_data()
@@ -507,6 +497,9 @@ class CcuiApp(App):
             status += f" | /{self._search_query}"
         self.query_one("#status-bar", Static).update(status)
 
+        help_text = " q:Quit  Tab:View  l:Open  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
+        self.query_one("#help-bar", Static).update(help_text)
+
     # ── Selection helpers ────────────────────────────────────────────────
 
     def _get_active_table(self) -> DataTable:
@@ -527,7 +520,7 @@ class CcuiApp(App):
         if table.row_count == 0:
             return None
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        sid = str(row_key)
+        sid = row_key.value
         for s in self._filtered:
             if s.session_id == sid:
                 return s
@@ -545,7 +538,7 @@ class CcuiApp(App):
         if table.row_count == 0:
             return None
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        path_str = str(row_key)
+        path_str = row_key.value
         for item in items:
             if str(item.path) == path_str:
                 return item
@@ -579,6 +572,51 @@ class CcuiApp(App):
         if session:
             return session.project_path
         return ""
+
+    # ── Key dispatch ─────────────────────────────────────────────────────
+
+    _KEY_MAP = {
+        "tab": "action_switch_view",
+        "l": "action_view_item",
+        "d": "action_delete_item",
+        "a": "action_toggle_archive",
+        "H": "action_toggle_show_archived",
+        "r": "action_rename",
+        "n": "action_new_item",
+        "e": "action_edit_external",
+        "x": "action_export_session",
+        "slash": "action_search",
+        "1": "action_tab_sessions",
+        "2": "action_tab_plans",
+        "3": "action_tab_notes",
+        "4": "action_tab_config",
+        "j": "action_vim_down",
+        "k": "action_vim_up",
+        "l": "action_view_item",
+        "g": "action_scroll_top",
+        "G": "action_scroll_bottom",
+        "down": "action_vim_down",
+        "up": "action_vim_up",
+    }
+
+    def on_key(self, event) -> None:
+        # Don't intercept keys when search bar is active
+        search_bar = self.query_one("#search-bar", Input)
+        if search_bar.display and search_bar.has_focus:
+            if event.key == "escape":
+                search_bar.display = False
+                self._search_query = ""
+                self._refresh_all()
+                self._get_active_table().focus()
+                event.prevent_default()
+                event.stop()
+            return
+
+        action = self._KEY_MAP.get(event.key)
+        if action:
+            getattr(self, action)()
+            event.prevent_default()
+            event.stop()
 
     # ── Event handlers ───────────────────────────────────────────────────
 
@@ -637,14 +675,6 @@ class CcuiApp(App):
     def on_search_changed(self, event: Input.Changed) -> None:
         self._search_query = event.value.strip()
         self._refresh_all()
-
-    def key_escape(self) -> None:
-        search_bar = self.query_one("#search-bar", Input)
-        if search_bar.display:
-            search_bar.display = False
-            self._search_query = ""
-            self._refresh_all()
-            self._get_active_table().focus()
 
     # ── Actions ──────────────────────────────────────────────────────────
 
