@@ -9,14 +9,7 @@ from pathlib import Path
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import (
-    DataTable,
-    Header,
-    OptionList,
-    Static,
-    TabbedContent,
-    TabPane,
-)
+from textual.widgets import DataTable, OptionList, Static, TabbedContent, TabPane
 from textual.widgets.option_list import Option
 
 from ccui.config import get_global_config, get_project_config
@@ -73,7 +66,6 @@ class ProjectScreen(ItemListScreen):
     # ── Compose ───────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        yield Header()
         yield from self._compose_search_bar()
         with Horizontal(id="project-view"):
             yield OptionList(id="project-list")

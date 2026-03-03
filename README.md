@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="ccui logo" width="300">
+</p>
+
 # ccui
 
 TUI for browsing and managing Claude Code sessions, plans, notes, skills, and rules.

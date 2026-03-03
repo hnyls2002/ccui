@@ -20,6 +20,7 @@ from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Input, Static
 
+from ccui.logo import LOGO
 from ccui.notes import create_note
 from ccui.screens.dialogs import ConfirmDialog, InputDialog
 from ccui.screens.viewer import ContentViewScreen
@@ -141,6 +142,7 @@ class BaseViewScreen(Screen):
     def _compose_footer(self) -> ComposeResult:
         yield Static("", id="status-bar")
         yield Static("", id="help-bar")
+        yield Static(LOGO, id="logo-bar")
 
 
 # ═══════════════════════════════════════════════════════════════════════

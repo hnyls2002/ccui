@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import DataTable, Header, Static
+from textual.widgets import DataTable, Static
 
 from ccui.screens.base import ItemListScreen
 from ccui.tabs import TimelineTab
@@ -29,7 +29,6 @@ class TimelineScreen(ItemListScreen):
     # ── Compose ───────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        yield Header()
         yield from self._compose_search_bar()
         with Vertical(id="timeline-view"):
             yield DataTable(id="tl-table", cursor_type="row", classes="session-table")
