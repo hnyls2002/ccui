@@ -411,11 +411,15 @@ class CcuiApp(App):
         project_list.clear_options()
         names = get_project_names(self._sessions)
         total = len(self._sessions)
+        option_names = ["GLOBAL"] + names
         project_list.add_option(Option(f"GLOBAL ({total})"))
         for name in names:
             count = sum(1 for s in self._sessions if s.project_name == name)
             project_list.add_option(Option(f"{name} ({count})"))
-        if prev is not None and prev < len(names) + 1:
+        # Sync highlight with _selected_project
+        if self._selected_project in option_names:
+            project_list.highlighted = option_names.index(self._selected_project)
+        elif prev is not None and prev < len(option_names):
             project_list.highlighted = prev
 
         # Sessions
@@ -764,13 +768,9 @@ class CcuiApp(App):
             self._view_mode = "project"
             self.query_one("#timeline-view").add_class("hidden")
             self.query_one("#project-view").remove_class("hidden")
-            names = get_project_names(self._sessions)
-            if names and not self._selected_project:
-                self._selected_project = names[0]
-                for s in self._sessions:
-                    if s.project_name == names[0]:
-                        self._selected_project_path = s.project_path
-                        break
+            if not self._selected_project:
+                self._selected_project = "GLOBAL"
+                self._selected_project_path = ""
         else:
             self._view_mode = "timeline"
             self.query_one("#project-view").add_class("hidden")
