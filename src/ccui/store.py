@@ -22,7 +22,7 @@ class AppStore:
         self.archived_ids = get_archived_ids()
 
     def display_title(self, s: SessionInfo) -> str:
-        return s.slug or s.first_prompt[:60]
+        return s.custom_title or s.first_prompt[:60]
 
     def visible_sessions(self, project: str | None = None) -> list[SessionInfo]:
         sessions = self.sessions

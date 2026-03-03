@@ -19,6 +19,7 @@ class SessionInfo:
     project_name: str  # short name, e.g. sglang
     first_prompt: str
     slug: str
+    custom_title: str
     message_count: int
     created: datetime | None
     modified: datetime | None
@@ -125,9 +126,10 @@ def _parse_timestamp(ts: int | float | str | None) -> datetime | None:
         return None
 
 
-def _read_last_slug(jsonl_path: Path) -> str:
-    """Read the last slug value from a JSONL file (rename changes it mid-session)."""
+def _read_slug_and_title(jsonl_path: Path) -> tuple[str, str]:
+    """Read the last slug and customTitle from a JSONL file."""
     slug = ""
+    custom_title = ""
     try:
         with open(jsonl_path) as f:
             for line in f:
@@ -137,9 +139,11 @@ def _read_last_slug(jsonl_path: Path) -> str:
                     continue
                 if obj.get("slug"):
                     slug = obj["slug"]
+                if obj.get("customTitle"):
+                    custom_title = obj["customTitle"]
     except OSError:
         pass
-    return slug
+    return slug, custom_title
 
 
 def _load_sessions_from_index(project_dir: Path) -> list[SessionInfo]:
@@ -160,7 +164,7 @@ def _load_sessions_from_index(project_dir: Path) -> list[SessionInfo]:
     for entry in data.get("entries", []):
         sid = entry.get("sessionId", "")
         jsonl_path = project_dir / f"{sid}.jsonl"
-        slug = _read_last_slug(jsonl_path)
+        slug, custom_title = _read_slug_and_title(jsonl_path)
         sessions.append(
             SessionInfo(
                 session_id=sid,
@@ -168,6 +172,7 @@ def _load_sessions_from_index(project_dir: Path) -> list[SessionInfo]:
                 project_name=project_name,
                 first_prompt=entry.get("firstPrompt", "No prompt"),
                 slug=slug,
+                custom_title=custom_title,
                 message_count=entry.get("messageCount", 0),
                 created=_parse_iso_datetime(entry.get("created")),
                 modified=_parse_iso_datetime(entry.get("modified")),
@@ -187,6 +192,7 @@ def _parse_session_from_jsonl(
     project_name = _project_name_from_path(project_path)
     first_prompt = "No prompt"
     slug = ""
+    custom_title = ""
     message_count = 0
     first_ts = None
     last_ts = None
@@ -203,9 +209,11 @@ def _parse_session_from_jsonl(
                 msg_type = obj.get("type", "")
                 ts = obj.get("timestamp")
 
-                # Track last slug (rename changes it mid-session)
+                # Track last slug and custom title
                 if obj.get("slug"):
                     slug = obj["slug"]
+                if obj.get("customTitle"):
+                    custom_title = obj["customTitle"]
 
                 if msg_type in ("user", "assistant"):
                     message_count += 1
@@ -248,6 +256,7 @@ def _parse_session_from_jsonl(
         project_name=project_name,
         first_prompt=first_prompt,
         slug=slug,
+        custom_title=custom_title,
         message_count=message_count,
         created=_parse_timestamp(first_ts),
         modified=_parse_timestamp(last_ts),
