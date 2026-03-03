@@ -12,7 +12,12 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, OptionList, Static, TabbedContent, TabPane
 from textual.widgets.option_list import Option
 
-from ccui.config import get_global_config, get_project_config
+from ccui.config import (
+    CLAUDE_DIR,
+    get_global_config,
+    get_project_config,
+    read_file_content,
+)
 from ccui.screens.base import ItemListScreen
 from ccui.screens.dialogs import InputDialog
 from ccui.tabs import NotesTab, RulesTab, SessionsTab, SkillsTab
@@ -163,14 +168,18 @@ class ProjectScreen(ItemListScreen):
         path = handler.edit_path(item) if handler and item else None
         if not path and self._active_tab == "config":
             pp = self._selected_project_path
+            candidates: list[Path] = []
             if pp:
-                for candidate in [
+                candidates += [
                     Path(pp) / "CLAUDE.md",
                     Path(pp) / ".claude" / "CLAUDE.md",
-                ]:
-                    if candidate.exists():
-                        path = candidate
-                        break
+                ]
+            # Always fall back to global CLAUDE.md
+            candidates.append(CLAUDE_DIR / "CLAUDE.md")
+            for candidate in candidates:
+                if candidate.exists():
+                    path = candidate
+                    break
         if not path:
             self.notify("Nothing to edit", severity="warning")
             return
@@ -247,6 +256,10 @@ class ProjectScreen(ItemListScreen):
                 lines.append(
                     f"Global CLAUDE.md  : found ({gcfg.claude_md_lines} lines)"
                 )
+                lines.append("")
+                content = read_file_content(gcfg.claude_md_path)
+                for cl in content.splitlines():
+                    lines.append(f"  {cl}")
             else:
                 lines.append("Global CLAUDE.md  : not found")
             lines.append("")
@@ -279,6 +292,10 @@ class ProjectScreen(ItemListScreen):
         lines.append("")
         if gcfg.claude_md_path:
             lines.append(f"Global CLAUDE.md  : found ({gcfg.claude_md_lines} lines)")
+            lines.append("")
+            content = read_file_content(gcfg.claude_md_path)
+            for cl in content.splitlines():
+                lines.append(f"  {cl}")
         else:
             lines.append("Global CLAUDE.md  : not found")
         lines.append("")
