@@ -497,7 +497,7 @@ class CcuiApp(App):
             status += f" | /{self._search_query}"
         self.query_one("#status-bar", Static).update(status)
 
-        help_text = " q:Quit  Tab:View  l:Open  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
+        help_text = " q:Quit  Tab:View  h/l:Tab  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
         self.query_one("#help-bar", Static).update(help_text)
 
     # ── Selection helpers ────────────────────────────────────────────────
@@ -577,7 +577,8 @@ class CcuiApp(App):
 
     _KEY_MAP = {
         "tab": "action_switch_view",
-        "l": "action_view_item",
+        "h": "action_tab_prev",
+        "l": "action_tab_next",
         "d": "action_delete_item",
         "a": "action_toggle_archive",
         "H": "action_toggle_show_archived",
@@ -592,7 +593,6 @@ class CcuiApp(App):
         "4": "action_tab_config",
         "j": "action_vim_down",
         "k": "action_vim_up",
-        "l": "action_view_item",
         "g": "action_scroll_top",
         "G": "action_scroll_bottom",
         "down": "action_vim_down",
@@ -910,6 +910,22 @@ class CcuiApp(App):
         search_bar.focus()
 
     # Tab switching
+    _TAB_ORDER = ["tab-sessions", "tab-plans", "tab-notes", "tab-config"]
+
+    def action_tab_next(self) -> None:
+        if self._view_mode != "project":
+            return
+        tabs = self.query_one("#project-tabs", TabbedContent)
+        idx = self._TAB_ORDER.index(tabs.active)
+        tabs.active = self._TAB_ORDER[(idx + 1) % len(self._TAB_ORDER)]
+
+    def action_tab_prev(self) -> None:
+        if self._view_mode != "project":
+            return
+        tabs = self.query_one("#project-tabs", TabbedContent)
+        idx = self._TAB_ORDER.index(tabs.active)
+        tabs.active = self._TAB_ORDER[(idx - 1) % len(self._TAB_ORDER)]
+
     def action_tab_sessions(self) -> None:
         if self._view_mode == "project":
             self.query_one("#project-tabs", TabbedContent).active = "tab-sessions"
