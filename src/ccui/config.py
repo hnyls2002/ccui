@@ -261,3 +261,15 @@ def delete_skill(skill: SkillInfo) -> bool:
 
     shutil.rmtree(skill.path.parent, ignore_errors=True)
     return True
+
+
+def delete_rule(rule: RuleInfo) -> bool:
+    """Delete a rule file."""
+    if rule.is_global:
+        return False
+    try:
+        if rule.path.exists():
+            rule.path.unlink()
+        return True
+    except OSError:
+        return False

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -53,14 +54,53 @@ def _project_name_from_path(project_path: str) -> str:
     return name or "~"
 
 
+def _read_original_path(project_dir: Path) -> str:
+    """Read originalPath from sessions-index.json if available."""
+    index_file = project_dir / "sessions-index.json"
+    if not index_file.exists():
+        return ""
+    try:
+        data = json.loads(index_file.read_text())
+        return data.get("originalPath", "")
+    except (json.JSONDecodeError, OSError):
+        return ""
+
+
 def _dir_name_to_project_path(dir_name: str) -> str:
     """Convert a project directory name back to original path.
 
-    e.g. '-Users-lsyin-common-sync-sglang' -> '/Users/lsyin/common_sync/sglang'
+    Claude Code encodes paths by replacing both / and _ with -.
+    We walk the filesystem greedily, trying to merge adjacent segments
+    with _ or - when a direct / split doesn't match.
     """
-    # The dir name uses - for /, but also for - in path components
-    # Best effort: replace leading - with / and split
-    return dir_name.replace("-", "/")
+    parts = dir_name.lstrip("-").split("-")
+    current = "/"
+    i = 0
+    while i < len(parts):
+        # Try single segment as a direct child
+        candidate = os.path.join(current, parts[i])
+        if os.path.exists(candidate):
+            current = candidate
+            i += 1
+            continue
+        # Try merging adjacent segments with _ or -
+        found = False
+        for j in range(i + 1, min(i + 4, len(parts) + 1)):
+            for sep in ("_", "-", "."):
+                merged = sep.join(parts[i : j + 1])
+                candidate = os.path.join(current, merged)
+                if os.path.exists(candidate):
+                    current = candidate
+                    i = j + 1
+                    found = True
+                    break
+            if found:
+                break
+        if not found:
+            # Fallback: use segment as-is even if path doesn't exist
+            current = os.path.join(current, parts[i])
+            i += 1
+    return current
 
 
 def _parse_iso_datetime(s: str | None) -> datetime | None:
@@ -202,7 +242,10 @@ def load_all_sessions() -> list[SessionInfo]:
         if not project_dir.is_dir() or project_dir.name.startswith("."):
             continue
 
-        project_path = _dir_name_to_project_path(project_dir.name)
+        # Get project path: prefer originalPath from index, fallback to dir name
+        project_path = _read_original_path(project_dir) or _dir_name_to_project_path(
+            project_dir.name
+        )
 
         # Try loading from index first
         indexed = _load_sessions_from_index(project_dir)

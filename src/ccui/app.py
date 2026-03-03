@@ -25,7 +25,15 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from ccui.archive import get_archived_ids, toggle_archive
-from ccui.config import get_global_config, get_project_config
+from ccui.config import (
+    RuleInfo,
+    SkillInfo,
+    delete_rule,
+    delete_skill,
+    get_global_config,
+    get_project_config,
+    read_file_content,
+)
 from ccui.data import (
     SessionInfo,
     delete_session,
@@ -227,6 +235,9 @@ class CcuiApp(App):
         # Notes/plans cache
         self._plans: list[NoteInfo] = []
         self._notes: list[NoteInfo] = []
+        # Skills/rules cache
+        self._skills: list[SkillInfo] = []
+        self._rules: list[RuleInfo] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -258,6 +269,18 @@ class CcuiApp(App):
                     with TabPane("Notes", id="tab-notes"):
                         yield DataTable(
                             id="pv-note-table",
+                            cursor_type="row",
+                            classes="session-table",
+                        )
+                    with TabPane("Skills", id="tab-skills"):
+                        yield DataTable(
+                            id="pv-skill-table",
+                            cursor_type="row",
+                            classes="session-table",
+                        )
+                    with TabPane("Rules", id="tab-rules"):
+                        yield DataTable(
+                            id="pv-rule-table",
                             cursor_type="row",
                             classes="session-table",
                         )
@@ -297,6 +320,16 @@ class CcuiApp(App):
             self._plans = []
             self._notes = []
 
+    def _load_skills_rules(self) -> None:
+        if self._selected_project == "GLOBAL" or not self._selected_project_path:
+            gcfg = get_global_config()
+            self._skills = list(gcfg.skills)
+            self._rules = list(gcfg.rules)
+        else:
+            cfg = get_project_config(self._selected_project_path)
+            self._skills = list(cfg.skills)
+            self._rules = list(cfg.rules)
+
     # ── Table setup ──────────────────────────────────────────────────────
 
     def _setup_all_tables(self) -> None:
@@ -315,6 +348,14 @@ class CcuiApp(App):
         nt = self.query_one("#pv-note-table", DataTable)
         nt.clear(columns=True)
         nt.add_columns("Title", "Date", "Session")
+
+        st = self.query_one("#pv-skill-table", DataTable)
+        st.clear(columns=True)
+        st.add_columns("Name", "Description", "Source")
+
+        rt = self.query_one("#pv-rule-table", DataTable)
+        rt.clear(columns=True)
+        rt.add_columns("Name", "Scope", "Source")
 
     # ── Refresh ──────────────────────────────────────────────────────────
 
@@ -410,6 +451,21 @@ class CcuiApp(App):
                 linked = f"→ {self._custom_titles.get(n.session_id, n.session_id[:8])}"
             nt.add_row(n.title, n.created, linked, key=str(n.path))
 
+        # Skills & Rules
+        self._load_skills_rules()
+        sk = self.query_one("#pv-skill-table", DataTable)
+        sk.clear()
+        for i, s in enumerate(self._skills):
+            source = "global" if s.is_global else "project"
+            sk.add_row(s.name, s.description, source, key=f"skill-{i}")
+
+        ru = self.query_one("#pv-rule-table", DataTable)
+        ru.clear()
+        for i, r in enumerate(self._rules):
+            scope = ", ".join(r.paths) if r.paths else "(all)"
+            source = "global" if r.is_global else "project"
+            ru.add_row(r.name, scope, source, key=f"rule-{i}")
+
         # Config
         self._refresh_config_panel()
         self._refreshing = False
@@ -429,12 +485,6 @@ class CcuiApp(App):
             lines.append(
                 f"Global settings   : {gcfg.permission_count} permission rules"
             )
-            lines.append("")
-            lines.append("Skills (global):")
-            for s in gcfg.skills:
-                lines.append(f"  • {s.name} — {s.description}")
-            if not gcfg.skills:
-                lines.append("  (none)")
             self.query_one("#config-content", Static).update("\n".join(lines))
             return
 
@@ -463,33 +513,7 @@ class CcuiApp(App):
         lines.append(f"settings.local    : {cfg.permission_count} permission rules")
         lines.append("")
 
-        # Rules
-        lines.append("Rules (project):")
-        if cfg.rules:
-            for r in cfg.rules:
-                scope = f"paths: {', '.join(r.paths)}" if r.paths else "(global)"
-                lines.append(f"  • {r.name} — {scope}")
-        else:
-            lines.append("  (none)")
-        lines.append("")
-
-        # Skills
-        lines.append("Skills (project):")
-        if cfg.skills:
-            for s in cfg.skills:
-                lines.append(f"  • {s.name} — {s.description}")
-        else:
-            lines.append("  (none)")
-        lines.append("")
-
-        lines.append("Skills (global):")
-        for s in gcfg.skills:
-            lines.append(f"  • {s.name} — {s.description}")
-        if not gcfg.skills:
-            lines.append("  (none)")
-
         # Global CLAUDE.md
-        lines.append("")
         if gcfg.claude_md_path:
             lines.append(f"Global CLAUDE.md  : found ({gcfg.claude_md_lines} lines)")
         else:
@@ -517,7 +541,7 @@ class CcuiApp(App):
             status += f" | /{self._search_query}"
         self.query_one("#status-bar", Static).update(status)
 
-        help_text = " q:Quit  Tab:View  h/l:Tab  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
+        help_text = " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
         self.query_one("#help-bar", Static).update(help_text)
 
     # ── Selection helpers ────────────────────────────────────────────────
@@ -525,12 +549,16 @@ class CcuiApp(App):
     def _get_active_table(self) -> DataTable:
         if self._view_mode == "timeline":
             return self.query_one("#tl-table", DataTable)
-        if self._active_tab == "sessions":
-            return self.query_one("#pv-session-table", DataTable)
-        if self._active_tab == "plans":
-            return self.query_one("#pv-plan-table", DataTable)
-        if self._active_tab == "notes":
-            return self.query_one("#pv-note-table", DataTable)
+        tab_table = {
+            "sessions": "#pv-session-table",
+            "plans": "#pv-plan-table",
+            "notes": "#pv-note-table",
+            "skills": "#pv-skill-table",
+            "rules": "#pv-rule-table",
+        }
+        table_id = tab_table.get(self._active_tab)
+        if table_id:
+            return self.query_one(table_id, DataTable)
         return self.query_one("#tl-table", DataTable)
 
     def _get_selected_session(self) -> SessionInfo | None:
@@ -562,6 +590,30 @@ class CcuiApp(App):
         for item in items:
             if str(item.path) == path_str:
                 return item
+        return None
+
+    def _get_selected_skill(self) -> SkillInfo | None:
+        if self._active_tab != "skills":
+            return None
+        table = self.query_one("#pv-skill-table", DataTable)
+        if table.row_count == 0:
+            return None
+        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+        idx = int(row_key.value.split("-")[1])
+        if 0 <= idx < len(self._skills):
+            return self._skills[idx]
+        return None
+
+    def _get_selected_rule(self) -> RuleInfo | None:
+        if self._active_tab != "rules":
+            return None
+        table = self.query_one("#pv-rule-table", DataTable)
+        if table.row_count == 0:
+            return None
+        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+        idx = int(row_key.value.split("-")[1])
+        if 0 <= idx < len(self._rules):
+            return self._rules[idx]
         return None
 
     def _update_preview(self) -> None:
@@ -610,7 +662,9 @@ class CcuiApp(App):
         "1": "action_tab_sessions",
         "2": "action_tab_plans",
         "3": "action_tab_notes",
-        "4": "action_tab_config",
+        "4": "action_tab_skills",
+        "5": "action_tab_rules",
+        "6": "action_tab_config",
         "j": "action_vim_down",
         "k": "action_vim_up",
         "g": "action_scroll_top",
@@ -650,6 +704,8 @@ class CcuiApp(App):
             ("project", "sessions"): "pv-session-table",
             ("project", "plans"): "pv-plan-table",
             ("project", "notes"): "pv-note-table",
+            ("project", "skills"): "pv-skill-table",
+            ("project", "rules"): "pv-rule-table",
         }
         expected_id = active_ids.get((self._view_mode, self._active_tab))
         if expected_id and event.data_table.id != expected_id:
@@ -682,6 +738,8 @@ class CcuiApp(App):
             "tab-sessions": "sessions",
             "tab-plans": "plans",
             "tab-notes": "notes",
+            "tab-skills": "skills",
+            "tab-rules": "rules",
             "tab-config": "config",
         }
         self._active_tab = mapping.get(tab_id, "sessions")
@@ -733,6 +791,24 @@ class CcuiApp(App):
                 )
             return
 
+        if self._active_tab == "skills" and self._view_mode == "project":
+            skill = self._get_selected_skill()
+            if skill:
+                content = read_file_content(skill.path)
+                source = "global" if skill.is_global else "project"
+                header = f" SKILL: {skill.name} ({source})"
+                self.push_screen(ContentViewScreen(header, content))
+            return
+
+        if self._active_tab == "rules" and self._view_mode == "project":
+            rule = self._get_selected_rule()
+            if rule:
+                content = read_file_content(rule.path)
+                source = "global" if rule.is_global else "project"
+                header = f" RULE: {rule.name} ({source})"
+                self.push_screen(ContentViewScreen(header, content))
+            return
+
         if self._active_tab == "config" and self._view_mode == "project":
             return
 
@@ -770,6 +846,44 @@ class CcuiApp(App):
 
             self.push_screen(
                 ConfirmDialog(f"Delete {note.kind} '{note.title}'?"),
+                callback=on_confirm,
+            )
+            return
+
+        if self._active_tab == "skills" and self._view_mode == "project":
+            skill = self._get_selected_skill()
+            if not skill:
+                return
+            if skill.is_global:
+                self.notify("Cannot delete global skill from here", severity="warning")
+                return
+
+            def on_confirm(confirmed: bool) -> None:
+                if confirmed and delete_skill(skill):
+                    self._refresh_project_view()
+                    self.notify(f"Deleted skill: {skill.name}")
+
+            self.push_screen(
+                ConfirmDialog(f"Delete skill '{skill.name}'?"),
+                callback=on_confirm,
+            )
+            return
+
+        if self._active_tab == "rules" and self._view_mode == "project":
+            rule = self._get_selected_rule()
+            if not rule:
+                return
+            if rule.is_global:
+                self.notify("Cannot delete global rule from here", severity="warning")
+                return
+
+            def on_confirm(confirmed: bool) -> None:
+                if confirmed and delete_rule(rule):
+                    self._refresh_project_view()
+                    self.notify(f"Deleted rule: {rule.name}")
+
+            self.push_screen(
+                ConfirmDialog(f"Delete rule '{rule.name}'?"),
                 callback=on_confirm,
             )
             return
@@ -870,6 +984,14 @@ class CcuiApp(App):
             note = self._get_selected_note()
             if note:
                 path = note.path
+        elif self._active_tab == "skills" and self._view_mode == "project":
+            skill = self._get_selected_skill()
+            if skill:
+                path = skill.path
+        elif self._active_tab == "rules" and self._view_mode == "project":
+            rule = self._get_selected_rule()
+            if rule:
+                path = rule.path
         elif self._active_tab == "config":
             pp = self._resolve_project_path()
             if pp:
@@ -933,7 +1055,14 @@ class CcuiApp(App):
         search_bar.focus()
 
     # Tab switching
-    _TAB_ORDER = ["tab-sessions", "tab-plans", "tab-notes", "tab-config"]
+    _TAB_ORDER = [
+        "tab-sessions",
+        "tab-plans",
+        "tab-notes",
+        "tab-skills",
+        "tab-rules",
+        "tab-config",
+    ]
 
     def action_tab_next(self) -> None:
         if self._view_mode != "project":
@@ -960,6 +1089,14 @@ class CcuiApp(App):
     def action_tab_notes(self) -> None:
         if self._view_mode == "project":
             self.query_one("#project-tabs", TabbedContent).active = "tab-notes"
+
+    def action_tab_skills(self) -> None:
+        if self._view_mode == "project":
+            self.query_one("#project-tabs", TabbedContent).active = "tab-skills"
+
+    def action_tab_rules(self) -> None:
+        if self._view_mode == "project":
+            self.query_one("#project-tabs", TabbedContent).active = "tab-rules"
 
     def action_tab_config(self) -> None:
         if self._view_mode == "project":
