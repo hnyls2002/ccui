@@ -7,6 +7,7 @@ from textual.binding import Binding
 
 from ccui.screens import ProjectScreen, TimelineScreen
 from ccui.store import AppStore
+from ccui.themes import CUSTOM_THEMES, THEME_CYCLE, load_theme_name, save_theme_name
 
 
 class CcuiApp(App):
@@ -19,6 +20,9 @@ class CcuiApp(App):
         super().__init__()
         self.store = AppStore()
         self._view_mode = "timeline"
+        for theme in CUSTOM_THEMES:
+            self.register_theme(theme)
+        self.theme = load_theme_name()
 
     def on_mount(self) -> None:
         self.store.reload()
@@ -32,6 +36,17 @@ class CcuiApp(App):
         else:
             self._view_mode = "timeline"
         self.switch_screen(self._view_mode)
+
+    def action_cycle_theme(self) -> None:
+        current = self.theme
+        try:
+            idx = THEME_CYCLE.index(current)
+            nxt = THEME_CYCLE[(idx + 1) % len(THEME_CYCLE)]
+        except ValueError:
+            nxt = THEME_CYCLE[0]
+        self.theme = nxt
+        save_theme_name(nxt)
+        self.notify(f"Theme: {nxt}")
 
 
 def main() -> None:

@@ -141,7 +141,7 @@ class ProjectScreen(ItemListScreen):
         self.query_one("#status-bar", Static).update(status)
         self.query_one("#help-bar", Static).update(
             " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  Enter:Open"
-            "  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
+            "  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search  T:Theme"
         )
 
     # ── Override: project path resolution ─────────────────────────────

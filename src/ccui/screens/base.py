@@ -44,6 +44,7 @@ class BaseViewScreen(Screen):
     _KEY_MAP: dict[str, str] = {
         "tab": "_action_switch_view",
         "slash": "_action_search",
+        "T": "_action_cycle_theme",
     }
 
     @property
@@ -103,6 +104,10 @@ class BaseViewScreen(Screen):
 
     def _action_switch_view(self) -> None:
         self.app.action_switch_view()  # type: ignore[attr-defined]
+
+    def _action_cycle_theme(self) -> None:
+        self.app.action_cycle_theme()  # type: ignore[attr-defined]
+        self._update_status()
 
     def _action_search(self) -> None:
         search_bar = self.query_one("#search-bar", Input)
