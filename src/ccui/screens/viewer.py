@@ -106,7 +106,7 @@ class ContentViewScreen(ModalScreen[None]):
         def on_kind(kind: str | None) -> None:
             if kind not in ("plan", "note"):
                 return
-            title = self._session.custom_title or self._session.first_prompt[:60]
+            title = self._session.custom_title or self._session.session_id[:8]
 
             def on_title(t: str | None) -> None:
                 if not t:

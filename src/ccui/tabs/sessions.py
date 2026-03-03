@@ -72,8 +72,12 @@ class _BaseSessionsTab(TabHandler):
 
     def get_preview(self, item: Any, store: AppStore) -> str:
         session: SessionInfo = item
-        messages = load_session_messages(session.jsonl_path, max_messages=4)
         lines: list[str] = []
+        summary = store.display_summary(session)
+        if summary:
+            lines.append(f"  ▸ {summary}")
+            lines.append(f"  {'─' * 50}")
+        messages = load_session_messages(session.jsonl_path, max_messages=4)
         for msg in messages:
             role = "USER" if msg["role"] == "user" else "ASST"
             text = msg["text"].replace("\n", " ")[:100]
