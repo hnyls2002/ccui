@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from ccui.constants import CLAUDE_DIR
+
 
 @dataclass
 class NoteInfo:
@@ -50,9 +52,12 @@ def _slugify(title: str) -> str:
 
 
 def scan_notes(project_path: str, kind: str) -> list[NoteInfo]:
-    """Scan {project}/.claude/plans/ or .claude/notes/ for markdown files."""
+    """Scan {project}/.claude/{kind}s/ for markdown files. Falls back to ~/.claude/{kind}s/."""
     subdir = "plans" if kind == "plan" else "notes"
-    notes_dir = Path(project_path) / ".claude" / subdir
+    if project_path:
+        notes_dir = Path(project_path) / ".claude" / subdir
+    else:
+        notes_dir = CLAUDE_DIR / subdir
     if not notes_dir.exists():
         return []
 

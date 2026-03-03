@@ -33,7 +33,7 @@ class NotesTab(TabHandler):
     def refresh(
         self, table: DataTable, store: AppStore, project: str, project_path: str
     ) -> None:
-        self._items = scan_notes(project_path, self.kind) if project_path else []
+        self._items = scan_notes(project_path, self.kind)
         table.clear()
         for n in self._items:
             linked = ""
