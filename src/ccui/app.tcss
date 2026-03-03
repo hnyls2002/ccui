@@ -1,0 +1,11 @@
+#timeline-view { height: 1fr; }
+#project-view { height: 1fr; }
+#project-list { width: 25; height: 1fr; border-right: solid $accent; }
+#right-panel { width: 1fr; height: 1fr; }
+.session-table { height: 1fr; }
+.preview { height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
+#status-bar { height: 1; padding: 0 1; background: $primary; color: $text; }
+#help-bar { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
+#search-bar { height: 3; dock: top; display: none; }
+.hidden { display: none; }
+#config-content { padding: 1 2; height: 1fr; overflow-y: auto; }

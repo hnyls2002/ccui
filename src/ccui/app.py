@@ -10,188 +10,23 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
     Header,
     Input,
-    Label,
     OptionList,
     Static,
     TabbedContent,
     TabPane,
-    TextArea,
 )
 from textual.widgets.option_list import Option
 
-from ccui.archive import get_archived_ids, toggle_archive
-from ccui.config import (
-    RuleInfo,
-    SkillInfo,
-    delete_rule,
-    delete_skill,
-    get_global_config,
-    get_project_config,
-    read_file_content,
-)
-from ccui.data import (
-    SessionInfo,
-    delete_session,
-    get_project_names,
-    load_all_sessions,
-    load_session_messages,
-)
-from ccui.notes import (
-    NoteInfo,
-    create_note,
-    delete_note,
-    read_note,
-    rename_note,
-    scan_notes,
-)
-from ccui.titles import get_all_titles, get_title, set_title
-
-# ---------------------------------------------------------------------------
-# Dialogs
-# ---------------------------------------------------------------------------
-
-
-class ConfirmDialog(ModalScreen[bool]):
-    BINDINGS = [
-        Binding("y", "confirm", "Yes"),
-        Binding("n", "cancel", "No"),
-        Binding("escape", "cancel", "Cancel"),
-        Binding("q", "cancel", "Cancel"),
-    ]
-    DEFAULT_CSS = """
-    ConfirmDialog { align: center middle; background: rgba(0, 0, 0, 0.6); }
-    #confirm-box {
-        width: 60;
-        height: auto;
-        max-height: 10;
-        border: thick $error;
-        background: $surface;
-        padding: 1 2;
-    }
-    #confirm-msg { margin-bottom: 1; text-style: bold; }
-    #confirm-hint { color: $text-muted; }
-    """
-
-    def __init__(self, message: str) -> None:
-        super().__init__()
-        self._message = message
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="confirm-box"):
-            yield Label(self._message, id="confirm-msg")
-            yield Label("  y = confirm  |  n / q / Esc = cancel", id="confirm-hint")
-
-    def action_confirm(self) -> None:
-        self.dismiss(True)
-
-    def action_cancel(self) -> None:
-        self.dismiss(False)
-
-
-class InputDialog(ModalScreen[str | None]):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-    DEFAULT_CSS = """
-    InputDialog { align: center middle; }
-    #input-box { width: 60; height: 9; border: thick $accent; background: $surface; padding: 1 2; }
-    """
-
-    def __init__(self, title: str, placeholder: str = "", default: str = "") -> None:
-        super().__init__()
-        self._title = title
-        self._placeholder = placeholder
-        self._default = default
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="input-box"):
-            yield Label(self._title)
-            yield Input(
-                placeholder=self._placeholder, value=self._default, id="dialog-input"
-            )
-            yield Label("[Enter] confirm / [Esc] cancel", classes="dim")
-
-    @on(Input.Submitted, "#dialog-input")
-    def on_submit(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value.strip() or None)
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
-# ---------------------------------------------------------------------------
-# Content viewer (session detail, note/plan, skill, rule, claude.md, etc.)
-# ---------------------------------------------------------------------------
-
-
-class ContentViewScreen(ModalScreen[None]):
-    BINDINGS = [
-        Binding("escape", "back", "Back", priority=True),
-        Binding("q", "back", "Back", priority=True),
-        Binding("x", "export", "Export to plan/note", priority=True),
-    ]
-    DEFAULT_CSS = """
-    ContentViewScreen { align: center middle; }
-    #cv-box { width: 100%; height: 100%; border: thick $accent; background: $surface; }
-    #cv-header { height: 3; padding: 0 2; background: $primary; color: $text; }
-    #cv-content { height: 1fr; padding: 0 1; }
-    """
-
-    def __init__(
-        self,
-        header: str,
-        content: str,
-        session: SessionInfo | None = None,
-        project_path: str = "",
-    ) -> None:
-        super().__init__()
-        self._header = header
-        self._content = content
-        self._session = session
-        self._project_path = project_path
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="cv-box"):
-            yield Static(self._header, id="cv-header")
-            yield TextArea(id="cv-content", read_only=True)
-
-    def on_mount(self) -> None:
-        self.query_one("#cv-content", TextArea).text = self._content
-
-    def action_back(self) -> None:
-        self.dismiss(None)
-
-    def action_export(self) -> None:
-        if not self._session or not self._project_path:
-            self.notify("No session to export", severity="warning")
-            return
-
-        def on_kind(kind: str | None) -> None:
-            if kind not in ("plan", "note"):
-                return
-            title = (
-                get_title(self._session.session_id) or self._session.first_prompt[:60]
-            )
-
-            def on_title(t: str | None) -> None:
-                if not t:
-                    return
-                create_note(
-                    self._project_path, kind, t, self._session.session_id, self._content
-                )
-                self.notify(f"Exported as {kind}: {t}")
-
-            self.app.push_screen(
-                InputDialog("Title:", default=title), callback=on_title
-            )
-
-        self.app.push_screen(
-            InputDialog("Export as (plan/note):", "plan"), callback=on_kind
-        )
-
+from ccui.config import get_global_config, get_project_config
+from ccui.notes import create_note
+from ccui.screens import ConfirmDialog, ContentViewScreen, InputDialog
+from ccui.store import AppStore
+from ccui.tabs import NotesTab, RulesTab, SessionsTab, SkillsTab, TimelineTab
+from ccui.tabs.base import TabHandler
 
 # ---------------------------------------------------------------------------
 # Main app
@@ -200,44 +35,32 @@ class ContentViewScreen(ModalScreen[None]):
 
 class CcuiApp(App):
     TITLE = "ccui"
+    CSS_PATH = "app.tcss"
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit"),
-    ]
-
-    CSS = """
-    #timeline-view { height: 1fr; }
-    #project-view { height: 1fr; }
-    #project-list { width: 25; height: 1fr; border-right: solid $accent; }
-    #right-panel { width: 1fr; height: 1fr; }
-    .session-table { height: 1fr; }
-    .preview { height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
-    #status-bar { height: 1; padding: 0 1; background: $primary; color: $text; }
-    #help-bar { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
-    #search-bar { height: 3; dock: top; display: none; }
-    .hidden { display: none; }
-    #config-content { padding: 1 2; height: 1fr; overflow-y: auto; }
-    """
+    BINDINGS = [Binding("q", "quit", "Quit")]
 
     def __init__(self) -> None:
         super().__init__()
-        self._sessions: list[SessionInfo] = []
-        self._filtered: list[SessionInfo] = []
-        self._archived_ids: set[str] = set()
-        self._custom_titles: dict[str, str] = {}
-        self._show_archived = False
+        self.store = AppStore()
+
+        # View state
         self._view_mode = "timeline"
         self._selected_project: str | None = None
         self._selected_project_path: str = ""
-        self._search_query = ""
         self._active_tab = "sessions"
-        self._refreshing = False  # guard against cascading refreshes
-        # Notes/plans cache
-        self._plans: list[NoteInfo] = []
-        self._notes: list[NoteInfo] = []
-        # Skills/rules cache
-        self._skills: list[SkillInfo] = []
-        self._rules: list[RuleInfo] = []
+        self._refreshing = False
+
+        # Tab handlers — one dict for project tabs, plus the timeline handler
+        self._timeline = TimelineTab()
+        self._project_tabs: dict[str, TabHandler] = {
+            "sessions": SessionsTab(),
+            "plans": NotesTab("plan"),
+            "notes": NotesTab("note"),
+            "skills": SkillsTab(),
+            "rules": RulesTab(),
+        }
+
+    # ── Compose ───────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -253,111 +76,74 @@ class CcuiApp(App):
             yield OptionList(id="project-list")
             with Vertical(id="right-panel"):
                 with TabbedContent(id="project-tabs"):
-                    with TabPane("Sessions", id="tab-sessions"):
-                        yield DataTable(
-                            id="pv-session-table",
-                            cursor_type="row",
-                            classes="session-table",
-                        )
-                        yield Static("", id="pv-preview", classes="preview")
-                    with TabPane("Plans", id="tab-plans"):
-                        yield DataTable(
-                            id="pv-plan-table",
-                            cursor_type="row",
-                            classes="session-table",
-                        )
-                    with TabPane("Notes", id="tab-notes"):
-                        yield DataTable(
-                            id="pv-note-table",
-                            cursor_type="row",
-                            classes="session-table",
-                        )
-                    with TabPane("Skills", id="tab-skills"):
-                        yield DataTable(
-                            id="pv-skill-table",
-                            cursor_type="row",
-                            classes="session-table",
-                        )
-                    with TabPane("Rules", id="tab-rules"):
-                        yield DataTable(
-                            id="pv-rule-table",
-                            cursor_type="row",
-                            classes="session-table",
-                        )
+                    # Table-based tabs from handlers
+                    for handler in self._project_tabs.values():
+                        with TabPane(handler.tab_label, id=handler.tab_id):
+                            yield DataTable(
+                                id=handler.table_id,
+                                cursor_type="row",
+                                classes="session-table",
+                            )
+                            if handler.has_preview:
+                                yield Static(
+                                    "",
+                                    id=f"{handler.table_id}-preview",
+                                    classes="preview",
+                                )
+                    # Config tab (special — no DataTable)
                     with TabPane("Config", id="tab-config"):
                         yield Static("", id="config-content")
 
         yield Static("", id="status-bar")
         yield Static("", id="help-bar")
 
+    # ── Lifecycle ─────────────────────────────────────────────────────────
+
     def on_mount(self) -> None:
-        self._load_data()
+        self.store.reload()
         self._setup_all_tables()
         self._refresh_all()
         self.call_after_refresh(self._focus_active_table)
 
     def _focus_active_table(self) -> None:
         table = self._get_active_table()
-        table.focus()
-        if table.row_count > 0:
-            table.move_cursor(row=0)
+        if table:
+            table.focus()
+            if table.row_count > 0:
+                table.move_cursor(row=0)
 
-    # ── Data loading ─────────────────────────────────────────────────────
-
-    def _load_data(self) -> None:
-        self._sessions = load_all_sessions()
-        self._archived_ids = get_archived_ids()
-        self._custom_titles = get_all_titles()
-
-    def _get_display_title(self, s: SessionInfo) -> str:
-        return self._custom_titles.get(s.session_id, s.first_prompt[:60])
-
-    def _load_notes_for_project(self) -> None:
-        if self._selected_project_path:
-            self._plans = scan_notes(self._selected_project_path, "plan")
-            self._notes = scan_notes(self._selected_project_path, "note")
-        else:
-            self._plans = []
-            self._notes = []
-
-    def _load_skills_rules(self) -> None:
-        if self._selected_project == "GLOBAL" or not self._selected_project_path:
-            gcfg = get_global_config()
-            self._skills = list(gcfg.skills)
-            self._rules = list(gcfg.rules)
-        else:
-            cfg = get_project_config(self._selected_project_path)
-            self._skills = list(cfg.skills)
-            self._rules = list(cfg.rules)
-
-    # ── Table setup ──────────────────────────────────────────────────────
+    # ── Table setup ───────────────────────────────────────────────────────
 
     def _setup_all_tables(self) -> None:
         tl = self.query_one("#tl-table", DataTable)
         tl.clear(columns=True)
-        tl.add_columns("", "Project", "Title", "Msgs", "Date", "Branch")
+        self._timeline.setup_columns(tl)
+        for handler in self._project_tabs.values():
+            table = self.query_one(f"#{handler.table_id}", DataTable)
+            table.clear(columns=True)
+            handler.setup_columns(table)
 
-        pv = self.query_one("#pv-session-table", DataTable)
-        pv.clear(columns=True)
-        pv.add_columns("", "Title", "Msgs", "Date", "Branch")
+    # ── Handler + table resolution ────────────────────────────────────────
 
-        pt = self.query_one("#pv-plan-table", DataTable)
-        pt.clear(columns=True)
-        pt.add_columns("Title", "Date", "Session")
+    def _get_active_handler(self) -> TabHandler | None:
+        if self._view_mode == "timeline":
+            return self._timeline
+        return self._project_tabs.get(self._active_tab)
 
-        nt = self.query_one("#pv-note-table", DataTable)
-        nt.clear(columns=True)
-        nt.add_columns("Title", "Date", "Session")
+    def _get_active_table(self) -> DataTable | None:
+        handler = self._get_active_handler()
+        if handler:
+            return self.query_one(f"#{handler.table_id}", DataTable)
+        return None
 
-        st = self.query_one("#pv-skill-table", DataTable)
-        st.clear(columns=True)
-        st.add_columns("Name", "Description", "Source")
+    def _get_active_item(self) -> tuple[TabHandler | None, object | None]:
+        handler = self._get_active_handler()
+        if not handler:
+            return None, None
+        table = self.query_one(f"#{handler.table_id}", DataTable)
+        return handler, handler.get_selected(table)
 
-        rt = self.query_one("#pv-rule-table", DataTable)
-        rt.clear(columns=True)
-        rt.add_columns("Name", "Scope", "Source")
-
-    # ── Refresh ──────────────────────────────────────────────────────────
+    # ── Refresh ───────────────────────────────────────────────────────────
 
     def _refresh_all(self) -> None:
         if self._view_mode == "timeline":
@@ -366,119 +152,45 @@ class CcuiApp(App):
             self._refresh_project_view()
         self._update_status()
 
-    def _get_visible_sessions(
-        self, project_filter: str | None = None
-    ) -> list[SessionInfo]:
-        sessions = self._sessions
-        if not self._show_archived:
-            sessions = [s for s in sessions if s.session_id not in self._archived_ids]
-        if project_filter and project_filter != "GLOBAL":
-            sessions = [s for s in sessions if s.project_name == project_filter]
-        if self._search_query:
-            q = self._search_query.lower()
-            sessions = [
-                s
-                for s in sessions
-                if q in self._get_display_title(s).lower()
-                or q in s.project_name.lower()
-                or q in s.git_branch.lower()
-            ]
-        return sessions
-
     def _refresh_timeline(self) -> None:
         self._refreshing = True
-        self._filtered = self._get_visible_sessions()
-        table = self.query_one("#tl-table", DataTable)
-        table.clear()
-        for s in self._filtered:
-            archived = "[A]" if s.session_id in self._archived_ids else ""
-            table.add_row(
-                archived,
-                s.project_name,
-                self._get_display_title(s),
-                str(s.message_count),
-                s.date_str,
-                s.git_branch,
-                key=s.session_id,
-            )
+        tl = self.query_one("#tl-table", DataTable)
+        self._timeline.refresh(tl, self.store, "", "")
         self._refreshing = False
 
     def _refresh_project_view(self) -> None:
         self._refreshing = True
-        # Project list
+        self._refresh_project_list()
+        project = self._selected_project or "GLOBAL"
+        project_path = self._selected_project_path
+        for handler in self._project_tabs.values():
+            table = self.query_one(f"#{handler.table_id}", DataTable)
+            handler.refresh(table, self.store, project, project_path)
+        self._refresh_config_panel()
+        self._refreshing = False
+
+    def _refresh_project_list(self) -> None:
         project_list = self.query_one("#project-list", OptionList)
         prev = project_list.highlighted
         project_list.clear_options()
-        names = get_project_names(self._sessions)
-        total = len(self._sessions)
+        names = self.store.project_names
+        total = len(self.store.sessions)
         option_names = ["GLOBAL"] + names
         project_list.add_option(Option(f"GLOBAL ({total})"))
         for name in names:
-            count = sum(1 for s in self._sessions if s.project_name == name)
+            count = sum(1 for s in self.store.sessions if s.project_name == name)
             project_list.add_option(Option(f"{name} ({count})"))
-        # Sync highlight with _selected_project
         if self._selected_project in option_names:
             project_list.highlighted = option_names.index(self._selected_project)
         elif prev is not None and prev < len(option_names):
             project_list.highlighted = prev
 
-        # Sessions
-        self._filtered = self._get_visible_sessions(self._selected_project)
-        table = self.query_one("#pv-session-table", DataTable)
-        table.clear()
-        for s in self._filtered:
-            archived = "[A]" if s.session_id in self._archived_ids else ""
-            table.add_row(
-                archived,
-                self._get_display_title(s),
-                str(s.message_count),
-                s.date_str,
-                s.git_branch,
-                key=s.session_id,
-            )
-
-        # Plans & Notes
-        self._load_notes_for_project()
-        pt = self.query_one("#pv-plan-table", DataTable)
-        pt.clear()
-        for p in self._plans:
-            linked = ""
-            if p.session_id:
-                linked = f"→ {self._custom_titles.get(p.session_id, p.session_id[:8])}"
-            pt.add_row(p.title, p.created, linked, key=str(p.path))
-
-        nt = self.query_one("#pv-note-table", DataTable)
-        nt.clear()
-        for n in self._notes:
-            linked = ""
-            if n.session_id:
-                linked = f"→ {self._custom_titles.get(n.session_id, n.session_id[:8])}"
-            nt.add_row(n.title, n.created, linked, key=str(n.path))
-
-        # Skills & Rules
-        self._load_skills_rules()
-        sk = self.query_one("#pv-skill-table", DataTable)
-        sk.clear()
-        for i, s in enumerate(self._skills):
-            source = "global" if s.is_global else "project"
-            sk.add_row(s.name, s.description, source, key=f"skill-{i}")
-
-        ru = self.query_one("#pv-rule-table", DataTable)
-        ru.clear()
-        for i, r in enumerate(self._rules):
-            scope = ", ".join(r.paths) if r.paths else "(all)"
-            source = "global" if r.is_global else "project"
-            ru.add_row(r.name, scope, source, key=f"rule-{i}")
-
-        # Config
-        self._refresh_config_panel()
-        self._refreshing = False
-
     def _refresh_config_panel(self) -> None:
         gcfg = get_global_config()
+        project = self._selected_project
+        project_path = self._selected_project_path
 
-        if self._selected_project == "GLOBAL" or not self._selected_project_path:
-            # Global-only config view
+        if project == "GLOBAL" or not project_path:
             lines: list[str] = []
             if gcfg.claude_md_path:
                 lines.append(
@@ -492,16 +204,12 @@ class CcuiApp(App):
             self.query_one("#config-content", Static).update("\n".join(lines))
             return
 
-        cfg = get_project_config(self._selected_project_path)
-        lines: list[str] = []
-
-        # CLAUDE.md
+        cfg = get_project_config(project_path)
+        lines = []
         if cfg.claude_md_path:
             lines.append(f"CLAUDE.md         : found ({cfg.claude_md_lines} lines)")
         else:
             lines.append("CLAUDE.md         : not found")
-
-        # Memory
         if cfg.memory:
             m = cfg.memory
             mem_parts = []
@@ -512,144 +220,60 @@ class CcuiApp(App):
             lines.append(
                 f"Auto Memory       : {' + '.join(mem_parts) if mem_parts else 'empty'}"
             )
-
-        # Settings
         lines.append(f"settings.local    : {cfg.permission_count} permission rules")
         lines.append("")
-
-        # Global CLAUDE.md
         if gcfg.claude_md_path:
             lines.append(f"Global CLAUDE.md  : found ({gcfg.claude_md_lines} lines)")
         else:
             lines.append("Global CLAUDE.md  : not found")
         lines.append(f"Global settings   : {gcfg.permission_count} permission rules")
-
         self.query_one("#config-content", Static).update("\n".join(lines))
 
     def _update_status(self) -> None:
-        total = len(self._sessions)
-        archived = sum(1 for s in self._sessions if s.session_id in self._archived_ids)
-        visible = len(self._filtered)
+        total = len(self.store.sessions)
+        archived = sum(
+            1 for s in self.store.sessions if s.session_id in self.store.archived_ids
+        )
+        table = self._get_active_table()
+        visible = table.row_count if table else 0
         view = (
             "Timeline"
             if self._view_mode == "timeline"
             else f"Project:{self._selected_project or '?'}"
         )
-        show_a = " | +archived" if self._show_archived else ""
+        show_a = " | +archived" if self.store.show_archived else ""
         tab = f" | {self._active_tab}" if self._view_mode == "project" else ""
-
         status = (
             f" [{view}] {visible}/{total} sessions | {archived} archived{show_a}{tab}"
         )
-        if self._search_query:
-            status += f" | /{self._search_query}"
+        if self.store.search_query:
+            status += f" | /{self.store.search_query}"
         self.query_one("#status-bar", Static).update(status)
 
-        help_text = " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
+        help_text = " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  Enter:Open  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search"
         self.query_one("#help-bar", Static).update(help_text)
 
-    # ── Selection helpers ────────────────────────────────────────────────
-
-    def _get_active_table(self) -> DataTable:
-        if self._view_mode == "timeline":
-            return self.query_one("#tl-table", DataTable)
-        tab_table = {
-            "sessions": "#pv-session-table",
-            "plans": "#pv-plan-table",
-            "notes": "#pv-note-table",
-            "skills": "#pv-skill-table",
-            "rules": "#pv-rule-table",
-        }
-        table_id = tab_table.get(self._active_tab)
-        if table_id:
-            return self.query_one(table_id, DataTable)
-        return self.query_one("#tl-table", DataTable)
-
-    def _get_selected_session(self) -> SessionInfo | None:
-        if self._active_tab not in ("sessions",) and self._view_mode == "project":
-            return None
-        table = self._get_active_table()
-        if table.row_count == 0:
-            return None
-        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        sid = row_key.value
-        for s in self._filtered:
-            if s.session_id == sid:
-                return s
-        return None
-
-    def _get_selected_note(self) -> NoteInfo | None:
-        if self._active_tab == "plans":
-            items = self._plans
-            table = self.query_one("#pv-plan-table", DataTable)
-        elif self._active_tab == "notes":
-            items = self._notes
-            table = self.query_one("#pv-note-table", DataTable)
-        else:
-            return None
-        if table.row_count == 0:
-            return None
-        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        path_str = row_key.value
-        for item in items:
-            if str(item.path) == path_str:
-                return item
-        return None
-
-    def _get_selected_skill(self) -> SkillInfo | None:
-        if self._active_tab != "skills":
-            return None
-        table = self.query_one("#pv-skill-table", DataTable)
-        if table.row_count == 0:
-            return None
-        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        idx = int(row_key.value.split("-")[1])
-        if 0 <= idx < len(self._skills):
-            return self._skills[idx]
-        return None
-
-    def _get_selected_rule(self) -> RuleInfo | None:
-        if self._active_tab != "rules":
-            return None
-        table = self.query_one("#pv-rule-table", DataTable)
-        if table.row_count == 0:
-            return None
-        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        idx = int(row_key.value.split("-")[1])
-        if 0 <= idx < len(self._rules):
-            return self._rules[idx]
-        return None
-
     def _update_preview(self) -> None:
-        if self._view_mode == "timeline":
-            preview = self.query_one("#tl-preview", Static)
-        elif self._active_tab == "sessions":
-            preview = self.query_one("#pv-preview", Static)
+        handler = self._get_active_handler()
+        if not handler or not handler.has_preview:
+            return
+        table = self.query_one(f"#{handler.table_id}", DataTable)
+        item = handler.get_selected(table)
+        preview_id = (
+            "tl-preview"
+            if self._view_mode == "timeline"
+            else f"{handler.table_id}-preview"
+        )
+        try:
+            preview = self.query_one(f"#{preview_id}", Static)
+        except Exception:
+            return
+        if item:
+            preview.update(handler.get_preview(item, self.store))
         else:
-            return
-
-        session = self._get_selected_session()
-        if not session:
             preview.update("")
-            return
-        messages = load_session_messages(session.jsonl_path, max_messages=4)
-        lines: list[str] = []
-        for msg in messages:
-            role = "USER" if msg["role"] == "user" else "ASST"
-            text = msg["text"].replace("\n", " ")[:100]
-            lines.append(f"  {role}: {text}")
-        preview.update("\n".join(lines) if lines else "  (no messages)")
 
-    def _resolve_project_path(self) -> str:
-        """Get the project path for the current context."""
-        if self._selected_project_path:
-            return self._selected_project_path
-        session = self._get_selected_session()
-        if session:
-            return session.project_path
-        return ""
-
-    # ── Key dispatch ─────────────────────────────────────────────────────
+    # ── Key dispatch ──────────────────────────────────────────────────────
 
     _KEY_MAP = {
         "tab": "action_switch_view",
@@ -663,12 +287,12 @@ class CcuiApp(App):
         "e": "action_edit_external",
         "x": "action_export_session",
         "slash": "action_search",
-        "1": "action_tab_sessions",
-        "2": "action_tab_plans",
-        "3": "action_tab_notes",
-        "4": "action_tab_skills",
-        "5": "action_tab_rules",
-        "6": "action_tab_config",
+        "1": "action_goto_tab_1",
+        "2": "action_goto_tab_2",
+        "3": "action_goto_tab_3",
+        "4": "action_goto_tab_4",
+        "5": "action_goto_tab_5",
+        "6": "action_goto_tab_6",
         "j": "action_vim_down",
         "k": "action_vim_up",
         "g": "action_scroll_top",
@@ -677,15 +301,25 @@ class CcuiApp(App):
         "up": "action_vim_up",
     }
 
+    _TAB_ORDER = [
+        "tab-sessions",
+        "tab-plans",
+        "tab-notes",
+        "tab-skills",
+        "tab-rules",
+        "tab-config",
+    ]
+
     def on_key(self, event) -> None:
-        # Don't intercept keys when search bar is active
         search_bar = self.query_one("#search-bar", Input)
         if search_bar.display and search_bar.has_focus:
             if event.key == "escape":
                 search_bar.display = False
-                self._search_query = ""
+                self.store.search_query = ""
                 self._refresh_all()
-                self._get_active_table().focus()
+                table = self._get_active_table()
+                if table:
+                    table.focus()
                 event.prevent_default()
                 event.stop()
             return
@@ -696,25 +330,23 @@ class CcuiApp(App):
             event.prevent_default()
             event.stop()
 
-    # ── Event handlers ───────────────────────────────────────────────────
+    # ── Event handlers ────────────────────────────────────────────────────
 
     @on(DataTable.RowHighlighted)
     def on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if self._refreshing:
             return
-        # Only respond to the currently active table
-        active_ids = {
-            ("timeline", "sessions"): "tl-table",
-            ("project", "sessions"): "pv-session-table",
-            ("project", "plans"): "pv-plan-table",
-            ("project", "notes"): "pv-note-table",
-            ("project", "skills"): "pv-skill-table",
-            ("project", "rules"): "pv-rule-table",
-        }
-        expected_id = active_ids.get((self._view_mode, self._active_tab))
-        if expected_id and event.data_table.id != expected_id:
+        handler = self._get_active_handler()
+        if handler and event.data_table.id == handler.table_id:
+            self._update_preview()
+
+    @on(DataTable.RowSelected)
+    def on_row_selected(self, event: DataTable.RowSelected) -> None:
+        if self._refreshing:
             return
-        self._update_preview()
+        handler = self._get_active_handler()
+        if handler and event.data_table.id == handler.table_id:
+            self.action_view_item()
 
     @on(OptionList.OptionHighlighted, "#project-list")
     def on_project_changed(self, event: OptionList.OptionHighlighted) -> None:
@@ -723,12 +355,12 @@ class CcuiApp(App):
         text = str(event.option.prompt)
         name = text.rsplit(" (", 1)[0]
         if name == self._selected_project:
-            return  # no change
+            return
         self._selected_project = name
         if name == "GLOBAL":
             self._selected_project_path = ""
         else:
-            for s in self._sessions:
+            for s in self.store.sessions:
                 if s.project_name == name:
                     self._selected_project_path = s.project_path
                     break
@@ -738,30 +370,26 @@ class CcuiApp(App):
     @on(TabbedContent.TabActivated, "#project-tabs")
     def on_tab_changed(self, event: TabbedContent.TabActivated) -> None:
         tab_id = str(event.pane.id) if event.pane else ""
-        mapping = {
-            "tab-sessions": "sessions",
-            "tab-plans": "plans",
-            "tab-notes": "notes",
-            "tab-skills": "skills",
-            "tab-rules": "rules",
-            "tab-config": "config",
-        }
+        mapping = {h.tab_id: key for key, h in self._project_tabs.items()}
+        mapping["tab-config"] = "config"
         self._active_tab = mapping.get(tab_id, "sessions")
         self._update_status()
 
     @on(Input.Submitted, "#search-bar")
     def on_search_submitted(self, event: Input.Submitted) -> None:
-        self._search_query = event.value.strip()
+        self.store.search_query = event.value.strip()
         self.query_one("#search-bar", Input).display = False
         self._refresh_all()
-        self._get_active_table().focus()
+        table = self._get_active_table()
+        if table:
+            table.focus()
 
     @on(Input.Changed, "#search-bar")
     def on_search_changed(self, event: Input.Changed) -> None:
-        self._search_query = event.value.strip()
+        self.store.search_query = event.value.strip()
         self._refresh_all()
 
-    # ── Actions ──────────────────────────────────────────────────────────
+    # ── Actions (generic — delegated to handlers) ─────────────────────────
 
     def action_switch_view(self) -> None:
         if self._view_mode == "timeline":
@@ -779,183 +407,76 @@ class CcuiApp(App):
         self.call_after_refresh(self._focus_active_table)
 
     def action_view_item(self) -> None:
-        if self._active_tab in ("plans", "notes") and self._view_mode == "project":
-            note = self._get_selected_note()
-            if note:
-                content = read_note(note)
-                header = f" {note.kind.upper()}: {note.title}"
-                self.push_screen(
-                    ContentViewScreen(
-                        header, content, project_path=self._selected_project_path
-                    )
-                )
+        handler, item = self._get_active_item()
+        if not handler or not item:
             return
-
-        if self._active_tab == "skills" and self._view_mode == "project":
-            skill = self._get_selected_skill()
-            if skill:
-                content = read_file_content(skill.path)
-                source = "global" if skill.is_global else "project"
-                header = f" SKILL: {skill.name} ({source})"
-                self.push_screen(ContentViewScreen(header, content))
+        info = handler.view_info(item, self.store)
+        if not info:
             return
-
-        if self._active_tab == "rules" and self._view_mode == "project":
-            rule = self._get_selected_rule()
-            if rule:
-                content = read_file_content(rule.path)
-                source = "global" if rule.is_global else "project"
-                header = f" RULE: {rule.name} ({source})"
-                self.push_screen(ContentViewScreen(header, content))
-            return
-
-        if self._active_tab == "config" and self._view_mode == "project":
-            return
-
-        session = self._get_selected_session()
-        if not session:
-            return
-        messages = load_session_messages(session.jsonl_path)
-        lines: list[str] = []
-        for msg in messages:
-            role = "USER" if msg["role"] == "user" else "CLAUDE"
-            lines.append(f"{'─' * 60}")
-            lines.append(f"  {role}:")
-            lines.append("")
-            lines.append(msg["text"])
-            lines.append("")
-        content = "\n".join(lines) if lines else "(no messages)"
-        title = self._get_display_title(session)
-        header = f" {session.project_name} | {title} | {session.message_count} msgs | {session.date_str}"
+        header, content, session = info
+        project_path = session.project_path if session else self._selected_project_path
         self.push_screen(
             ContentViewScreen(
-                header, content, session=session, project_path=session.project_path
+                header, content, session=session, project_path=project_path
             )
         )
 
     def action_delete_item(self) -> None:
-        if self._active_tab in ("plans", "notes") and self._view_mode == "project":
-            note = self._get_selected_note()
-            if not note:
-                return
-
-            def on_confirm(confirmed: bool) -> None:
-                if confirmed and delete_note(note):
-                    self._refresh_project_view()
-                    self.notify(f"Deleted {note.kind}: {note.title}")
-
-            self.push_screen(
-                ConfirmDialog(f"Delete {note.kind} '{note.title}'?"),
-                callback=on_confirm,
-            )
+        handler, item = self._get_active_item()
+        if not handler or not item:
             return
-
-        if self._active_tab == "skills" and self._view_mode == "project":
-            skill = self._get_selected_skill()
-            if not skill:
-                return
-            if skill.is_global:
-                self.notify("Cannot delete global skill from here", severity="warning")
-                return
-
-            def on_confirm(confirmed: bool) -> None:
-                if confirmed and delete_skill(skill):
-                    self._refresh_project_view()
-                    self.notify(f"Deleted skill: {skill.name}")
-
-            self.push_screen(
-                ConfirmDialog(f"Delete skill '{skill.name}'?"),
-                callback=on_confirm,
-            )
+        info = handler.delete_info(item, self.store)
+        if not info:
+            if self._active_tab in ("skills", "rules"):
+                self.notify("Cannot delete global item from here", severity="warning")
             return
-
-        if self._active_tab == "rules" and self._view_mode == "project":
-            rule = self._get_selected_rule()
-            if not rule:
-                return
-            if rule.is_global:
-                self.notify("Cannot delete global rule from here", severity="warning")
-                return
-
-            def on_confirm(confirmed: bool) -> None:
-                if confirmed and delete_rule(rule):
-                    self._refresh_project_view()
-                    self.notify(f"Deleted rule: {rule.name}")
-
-            self.push_screen(
-                ConfirmDialog(f"Delete rule '{rule.name}'?"),
-                callback=on_confirm,
-            )
-            return
-
-        session = self._get_selected_session()
-        if not session:
-            return
+        message, delete_fn = info
 
         def on_confirm(confirmed: bool) -> None:
-            if confirmed and delete_session(session):
-                self._sessions = [
-                    s for s in self._sessions if s.session_id != session.session_id
-                ]
+            if confirmed and delete_fn():
                 self._refresh_all()
-                self.notify(f"Deleted: {self._get_display_title(session)}")
+                self.notify("Deleted")
 
-        self.push_screen(
-            ConfirmDialog(f"Delete session '{self._get_display_title(session)[:40]}'?"),
-            callback=on_confirm,
-        )
+        self.push_screen(ConfirmDialog(message), callback=on_confirm)
 
     def action_toggle_archive(self) -> None:
-        session = self._get_selected_session()
-        if not session:
+        handler, item = self._get_active_item()
+        if not handler or not item or not handler.supports_archive:
             return
-        new_state = toggle_archive(session.session_id)
-        self._archived_ids = get_archived_ids()
-        self._refresh_all()
-        label = "Archived" if new_state else "Unarchived"
-        self.notify(f"{label}: {self._get_display_title(session)[:40]}")
+        msg = handler.toggle_archive(item, self.store)
+        if msg:
+            self._refresh_all()
+            self.notify(msg)
 
     def action_toggle_show_archived(self) -> None:
-        self._show_archived = not self._show_archived
+        self.store.show_archived = not self.store.show_archived
         self._refresh_all()
 
     def action_rename(self) -> None:
-        if self._active_tab in ("plans", "notes") and self._view_mode == "project":
-            note = self._get_selected_note()
-            if not note:
-                return
-
-            def on_title(t: str | None) -> None:
-                if t:
-                    rename_note(note, t)
-                    self._refresh_project_view()
-
-            self.push_screen(
-                InputDialog("Rename:", default=note.title), callback=on_title
-            )
+        handler, item = self._get_active_item()
+        if not handler or not item:
             return
-
-        session = self._get_selected_session()
-        if not session:
+        info = handler.rename_info(item, self.store)
+        if not info:
             return
-        current = self._get_display_title(session)
+        dialog_title, current, apply_fn = info
 
-        def on_title(t: str | None) -> None:
-            if t:
-                set_title(session.session_id, t)
-                self._custom_titles = get_all_titles()
+        def on_name(name: str | None) -> None:
+            if name:
+                apply_fn(name)
                 self._refresh_all()
 
-        self.push_screen(
-            InputDialog("Rename session:", default=current), callback=on_title
-        )
+        self.push_screen(InputDialog(dialog_title, default=current), callback=on_name)
 
     def action_new_item(self) -> None:
-        if self._view_mode != "project" or self._active_tab not in ("plans", "notes"):
+        handler = self._get_active_handler()
+        if not handler:
+            return
+        label = handler.create_label()
+        if not label:
             self.notify("Switch to Plans or Notes tab first", severity="warning")
             return
-        kind = "plan" if self._active_tab == "plans" else "note"
-        pp = self._resolve_project_path()
+        pp = self._selected_project_path
         if not pp:
             self.notify("No project selected", severity="warning")
             return
@@ -963,37 +484,30 @@ class CcuiApp(App):
         def on_title(t: str | None) -> None:
             if not t:
                 return
-            note = create_note(pp, kind, t)
-            self._refresh_project_view()
-            self.notify(f"Created {kind}: {t}")
-            # Open in $EDITOR
-            editor = os.environ.get("EDITOR", "vim")
-            self.app.suspend()
-            subprocess.call([editor, str(note.path)])
-            self.app.resume()
+            notify_msg, editor_path = handler.do_create(pp, t)
+            self._refresh_all()
+            if notify_msg:
+                self.notify(notify_msg)
+            if editor_path:
+                editor = os.environ.get("EDITOR", "vim")
+                self.suspend()
+                subprocess.call([editor, str(editor_path)])
+                self.resume()
+                self._refresh_all()
 
         self.push_screen(
-            InputDialog(f"New {kind} title:", f"my-{kind}"), callback=on_title
+            InputDialog(f"New {label} title:", f"my-{label}"), callback=on_title
         )
 
     def action_edit_external(self) -> None:
         editor = os.environ.get("EDITOR", "vim")
         path: Path | None = None
 
-        if self._active_tab in ("plans", "notes") and self._view_mode == "project":
-            note = self._get_selected_note()
-            if note:
-                path = note.path
-        elif self._active_tab == "skills" and self._view_mode == "project":
-            skill = self._get_selected_skill()
-            if skill:
-                path = skill.path
-        elif self._active_tab == "rules" and self._view_mode == "project":
-            rule = self._get_selected_rule()
-            if rule:
-                path = rule.path
+        handler, item = self._get_active_item()
+        if handler and item:
+            path = handler.edit_path(item)
         elif self._active_tab == "config":
-            pp = self._resolve_project_path()
+            pp = self._selected_project_path
             if pp:
                 for candidate in [
                     Path(pp) / "CLAUDE.md",
@@ -1006,43 +520,41 @@ class CcuiApp(App):
         if not path:
             self.notify("Nothing to edit", severity="warning")
             return
-
         self.suspend()
         subprocess.call([editor, str(path)])
         self.resume()
-        if self._view_mode == "project":
-            self._refresh_project_view()
+        self._refresh_all()
 
     def action_export_session(self) -> None:
-        session = self._get_selected_session()
-        if not session:
+        handler, item = self._get_active_item()
+        if not handler or not item:
             self.notify("Select a session first", severity="warning")
             return
-        pp = session.project_path or self._resolve_project_path()
+        export = handler.get_export_content(item, self.store)
+        if not export:
+            self.notify("Select a session first", severity="warning")
+            return
+        default_title, content = export
+        pp = getattr(item, "project_path", "") or self._selected_project_path
         if not pp:
             self.notify("No project path", severity="warning")
             return
 
-        messages = load_session_messages(session.jsonl_path)
-        lines: list[str] = []
-        for msg in messages:
-            role = "USER" if msg["role"] == "user" else "CLAUDE"
-            lines.append(f"### {role}\n\n{msg['text']}\n")
-        content = "\n".join(lines)
-
         def on_kind(kind: str | None) -> None:
             if kind not in ("plan", "note"):
                 return
-            title = self._get_display_title(session)
 
             def on_title(t: str | None) -> None:
                 if not t:
                     return
-                create_note(pp, kind, t, session.session_id, content)
+                session_id = getattr(item, "session_id", "")
+                create_note(pp, kind, t, session_id, content)
                 self._refresh_all()
                 self.notify(f"Exported as {kind}: {t}")
 
-            self.push_screen(InputDialog("Title:", default=title), callback=on_title)
+            self.push_screen(
+                InputDialog("Title:", default=default_title), callback=on_title
+            )
 
         self.push_screen(
             InputDialog("Export as (plan/note):", "plan"), callback=on_kind
@@ -1051,18 +563,16 @@ class CcuiApp(App):
     def action_search(self) -> None:
         search_bar = self.query_one("#search-bar", Input)
         search_bar.display = True
-        search_bar.value = self._search_query
+        search_bar.value = self.store.search_query
         search_bar.focus()
 
-    # Tab switching
-    _TAB_ORDER = [
-        "tab-sessions",
-        "tab-plans",
-        "tab-notes",
-        "tab-skills",
-        "tab-rules",
-        "tab-config",
-    ]
+    # ── Tab switching ─────────────────────────────────────────────────────
+
+    def _goto_tab(self, index: int) -> None:
+        if self._view_mode == "project" and 0 <= index < len(self._TAB_ORDER):
+            self.query_one("#project-tabs", TabbedContent).active = self._TAB_ORDER[
+                index
+            ]
 
     def action_tab_next(self) -> None:
         if self._view_mode != "project":
@@ -1078,49 +588,44 @@ class CcuiApp(App):
         idx = self._TAB_ORDER.index(tabs.active)
         tabs.active = self._TAB_ORDER[(idx - 1) % len(self._TAB_ORDER)]
 
-    def action_tab_sessions(self) -> None:
-        if self._view_mode == "project":
-            self.query_one("#project-tabs", TabbedContent).active = "tab-sessions"
+    def action_goto_tab_1(self) -> None:
+        self._goto_tab(0)
 
-    def action_tab_plans(self) -> None:
-        if self._view_mode == "project":
-            self.query_one("#project-tabs", TabbedContent).active = "tab-plans"
+    def action_goto_tab_2(self) -> None:
+        self._goto_tab(1)
 
-    def action_tab_notes(self) -> None:
-        if self._view_mode == "project":
-            self.query_one("#project-tabs", TabbedContent).active = "tab-notes"
+    def action_goto_tab_3(self) -> None:
+        self._goto_tab(2)
 
-    def action_tab_skills(self) -> None:
-        if self._view_mode == "project":
-            self.query_one("#project-tabs", TabbedContent).active = "tab-skills"
+    def action_goto_tab_4(self) -> None:
+        self._goto_tab(3)
 
-    def action_tab_rules(self) -> None:
-        if self._view_mode == "project":
-            self.query_one("#project-tabs", TabbedContent).active = "tab-rules"
+    def action_goto_tab_5(self) -> None:
+        self._goto_tab(4)
 
-    def action_tab_config(self) -> None:
-        if self._view_mode == "project":
-            self.query_one("#project-tabs", TabbedContent).active = "tab-config"
+    def action_goto_tab_6(self) -> None:
+        self._goto_tab(5)
 
-    # Vim navigation
+    # ── Vim navigation ────────────────────────────────────────────────────
+
     def action_vim_down(self) -> None:
         table = self._get_active_table()
-        if table.row_count > 0:
+        if table and table.row_count > 0:
             table.move_cursor(row=min(table.cursor_row + 1, table.row_count - 1))
 
     def action_vim_up(self) -> None:
         table = self._get_active_table()
-        if table.row_count > 0:
+        if table and table.row_count > 0:
             table.move_cursor(row=max(table.cursor_row - 1, 0))
 
     def action_scroll_top(self) -> None:
         table = self._get_active_table()
-        if table.row_count > 0:
+        if table and table.row_count > 0:
             table.move_cursor(row=0)
 
     def action_scroll_bottom(self) -> None:
         table = self._get_active_table()
-        if table.row_count > 0:
+        if table and table.row_count > 0:
             table.move_cursor(row=table.row_count - 1)
 
 
