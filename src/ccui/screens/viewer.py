@@ -23,6 +23,12 @@ class ContentViewScreen(ModalScreen[None]):
         Binding("escape", "back", "Back", priority=True),
         Binding("q", "back", "Back", priority=True),
         Binding("x", "export", "Export to plan/note", priority=True),
+        Binding("j", "scroll_down", "Down", show=False, priority=True),
+        Binding("k", "scroll_up", "Up", show=False, priority=True),
+        Binding("h", "cursor_left", "Left", show=False, priority=True),
+        Binding("l", "cursor_right", "Right", show=False, priority=True),
+        Binding("g", "scroll_top", "Top", show=False, priority=True),
+        Binding("G", "scroll_bottom", "Bottom", show=False, priority=True),
     ]
     DEFAULT_CSS = """
     ContentViewScreen { align: center middle; }
@@ -51,6 +57,31 @@ class ContentViewScreen(ModalScreen[None]):
 
     def on_mount(self) -> None:
         self.query_one("#cv-content", TextArea).text = self._content
+
+    def action_scroll_down(self) -> None:
+        ta = self.query_one("#cv-content", TextArea)
+        ta.action_cursor_down()
+
+    def action_scroll_up(self) -> None:
+        ta = self.query_one("#cv-content", TextArea)
+        ta.action_cursor_up()
+
+    def action_cursor_left(self) -> None:
+        ta = self.query_one("#cv-content", TextArea)
+        ta.action_cursor_left()
+
+    def action_cursor_right(self) -> None:
+        ta = self.query_one("#cv-content", TextArea)
+        ta.action_cursor_right()
+
+    def action_scroll_top(self) -> None:
+        ta = self.query_one("#cv-content", TextArea)
+        ta.move_cursor((0, 0))
+
+    def action_scroll_bottom(self) -> None:
+        ta = self.query_one("#cv-content", TextArea)
+        last_line = ta.document.line_count - 1
+        ta.move_cursor((last_line, 0))
 
     def action_back(self) -> None:
         self.dismiss(None)
