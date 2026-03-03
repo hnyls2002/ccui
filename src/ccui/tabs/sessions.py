@@ -63,17 +63,6 @@ class _BaseSessionsTab(TabHandler):
 
         return f"Delete session '{title}'?", do_delete
 
-    def rename_info(
-        self, item: Any, store: AppStore
-    ) -> tuple[str, str, callable] | None:
-        session: SessionInfo = item
-        current = store.display_title(session)
-
-        def do_rename(new_name: str) -> None:
-            store.rename_session(session.session_id, new_name)
-
-        return "Rename session:", current, do_rename
-
     def toggle_archive(self, item: Any, store: AppStore) -> str | None:
         session: SessionInfo = item
         new_state = toggle_archive(session.session_id)

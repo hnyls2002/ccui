@@ -13,7 +13,6 @@ from textual.widgets import Static, TextArea
 
 from ccui.notes import create_note
 from ccui.screens.dialogs import InputDialog
-from ccui.titles import get_title
 
 if TYPE_CHECKING:
     from ccui.data import SessionInfo
@@ -104,9 +103,7 @@ class ContentViewScreen(ModalScreen[None]):
         def on_kind(kind: str | None) -> None:
             if kind not in ("plan", "note"):
                 return
-            title = (
-                get_title(self._session.session_id) or self._session.first_prompt[:60]
-            )
+            title = self._session.slug or self._session.first_prompt[:60]
 
             def on_title(t: str | None) -> None:
                 if not t:

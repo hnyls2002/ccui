@@ -18,6 +18,7 @@ class SessionInfo:
     project_path: str  # original project path, e.g. /Users/x/common_sync/sglang
     project_name: str  # short name, e.g. sglang
     first_prompt: str
+    slug: str
     message_count: int
     created: datetime | None
     modified: datetime | None
@@ -124,6 +125,23 @@ def _parse_timestamp(ts: int | float | str | None) -> datetime | None:
         return None
 
 
+def _read_last_slug(jsonl_path: Path) -> str:
+    """Read the last slug value from a JSONL file (rename changes it mid-session)."""
+    slug = ""
+    try:
+        with open(jsonl_path) as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("slug"):
+                    slug = obj["slug"]
+    except OSError:
+        pass
+    return slug
+
+
 def _load_sessions_from_index(project_dir: Path) -> list[SessionInfo]:
     """Load sessions from sessions-index.json if available."""
     index_file = project_dir / "sessions-index.json"
@@ -142,12 +160,14 @@ def _load_sessions_from_index(project_dir: Path) -> list[SessionInfo]:
     for entry in data.get("entries", []):
         sid = entry.get("sessionId", "")
         jsonl_path = project_dir / f"{sid}.jsonl"
+        slug = _read_last_slug(jsonl_path)
         sessions.append(
             SessionInfo(
                 session_id=sid,
                 project_path=original_path,
                 project_name=project_name,
                 first_prompt=entry.get("firstPrompt", "No prompt"),
+                slug=slug,
                 message_count=entry.get("messageCount", 0),
                 created=_parse_iso_datetime(entry.get("created")),
                 modified=_parse_iso_datetime(entry.get("modified")),
@@ -166,6 +186,7 @@ def _parse_session_from_jsonl(
     sid = jsonl_path.stem
     project_name = _project_name_from_path(project_path)
     first_prompt = "No prompt"
+    slug = ""
     message_count = 0
     first_ts = None
     last_ts = None
@@ -181,6 +202,10 @@ def _parse_session_from_jsonl(
 
                 msg_type = obj.get("type", "")
                 ts = obj.get("timestamp")
+
+                # Track last slug (rename changes it mid-session)
+                if obj.get("slug"):
+                    slug = obj["slug"]
 
                 if msg_type in ("user", "assistant"):
                     message_count += 1
@@ -222,6 +247,7 @@ def _parse_session_from_jsonl(
         project_path=project_path,
         project_name=project_name,
         first_prompt=first_prompt,
+        slug=slug,
         message_count=message_count,
         created=_parse_timestamp(first_ts),
         modified=_parse_timestamp(last_ts),

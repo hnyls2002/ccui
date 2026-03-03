@@ -38,7 +38,10 @@ class NotesTab(TabHandler):
         for n in self._items:
             linked = ""
             if n.session_id:
-                linked = f"→ {store.custom_titles.get(n.session_id, n.session_id[:8])}"
+                s = next(
+                    (s for s in store.sessions if s.session_id == n.session_id), None
+                )
+                linked = f"→ {store.display_title(s)}" if s else f"→ {n.session_id[:8]}"
             table.add_row(n.title, n.created, linked, key=str(n.path))
 
     def get_selected(self, table: DataTable) -> NoteInfo | None:
