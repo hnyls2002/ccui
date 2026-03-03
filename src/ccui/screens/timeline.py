@@ -69,5 +69,5 @@ class TimelineScreen(ItemListScreen):
         self.query_one("#status-bar", Static).update(status)
         self.query_one("#help-bar", Static).update(
             " q:Quit  Tab:View  Enter:Open  o:Resume  d:Del  a:Archive"
-            "  H:Hidden  x:Export  /:Search  T:Theme"
+            "  H:Hidden  x:Export  /:Search  R:Reload  T:Theme"
         )

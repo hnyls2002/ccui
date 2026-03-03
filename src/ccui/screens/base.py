@@ -45,6 +45,7 @@ class BaseViewScreen(Screen):
         "tab": "_action_switch_view",
         "slash": "_action_search",
         "T": "_action_cycle_theme",
+        "R": "_action_reload",
     }
 
     @property
@@ -108,6 +109,11 @@ class BaseViewScreen(Screen):
     def _action_cycle_theme(self) -> None:
         self.app.action_cycle_theme()  # type: ignore[attr-defined]
         self._update_status()
+
+    def _action_reload(self) -> None:
+        self.store.reload()
+        self._refresh_all()
+        self.notify("Reloaded")
 
     def _action_search(self) -> None:
         search_bar = self.query_one("#search-bar", Input)
