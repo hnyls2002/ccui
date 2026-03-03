@@ -146,11 +146,20 @@ class CcuiApp(App):
     # ── Refresh ───────────────────────────────────────────────────────────
 
     def _refresh_all(self) -> None:
+        # Save cursor position before clearing tables
+        table = self._get_active_table()
+        saved_row = table.cursor_row if table and table.row_count > 0 else 0
+
         if self._view_mode == "timeline":
             self._refresh_timeline()
         else:
             self._refresh_project_view()
         self._update_status()
+
+        # Restore cursor to same row (or last row if it was deleted)
+        table = self._get_active_table()
+        if table and table.row_count > 0:
+            table.move_cursor(row=min(saved_row, table.row_count - 1))
 
     def _refresh_timeline(self) -> None:
         self._refreshing = True
