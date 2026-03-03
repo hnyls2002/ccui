@@ -331,7 +331,7 @@ class CcuiApp(App):
         sessions = self._sessions
         if not self._show_archived:
             sessions = [s for s in sessions if s.session_id not in self._archived_ids]
-        if project_filter:
+        if project_filter and project_filter != "GLOBAL":
             sessions = [s for s in sessions if s.project_name == project_filter]
         if self._search_query:
             q = self._search_query.lower()
@@ -369,10 +369,12 @@ class CcuiApp(App):
         prev = project_list.highlighted
         project_list.clear_options()
         names = get_project_names(self._sessions)
+        total = len(self._sessions)
+        project_list.add_option(Option(f"GLOBAL ({total})"))
         for name in names:
             count = sum(1 for s in self._sessions if s.project_name == name)
             project_list.add_option(Option(f"{name} ({count})"))
-        if prev is not None and prev < len(names):
+        if prev is not None and prev < len(names) + 1:
             project_list.highlighted = prev
 
         # Sessions
@@ -413,12 +415,30 @@ class CcuiApp(App):
         self._refreshing = False
 
     def _refresh_config_panel(self) -> None:
-        if not self._selected_project_path:
-            self.query_one("#config-content", Static).update("(select a project)")
+        gcfg = get_global_config()
+
+        if self._selected_project == "GLOBAL" or not self._selected_project_path:
+            # Global-only config view
+            lines: list[str] = []
+            if gcfg.claude_md_path:
+                lines.append(
+                    f"Global CLAUDE.md  : found ({gcfg.claude_md_lines} lines)"
+                )
+            else:
+                lines.append("Global CLAUDE.md  : not found")
+            lines.append(
+                f"Global settings   : {gcfg.permission_count} permission rules"
+            )
+            lines.append("")
+            lines.append("Skills (global):")
+            for s in gcfg.skills:
+                lines.append(f"  • {s.name} — {s.description}")
+            if not gcfg.skills:
+                lines.append("  (none)")
+            self.query_one("#config-content", Static).update("\n".join(lines))
             return
 
         cfg = get_project_config(self._selected_project_path)
-        gcfg = get_global_config()
         lines: list[str] = []
 
         # CLAUDE.md
@@ -645,10 +665,13 @@ class CcuiApp(App):
         if name == self._selected_project:
             return  # no change
         self._selected_project = name
-        for s in self._sessions:
-            if s.project_name == name:
-                self._selected_project_path = s.project_path
-                break
+        if name == "GLOBAL":
+            self._selected_project_path = ""
+        else:
+            for s in self._sessions:
+                if s.project_name == name:
+                    self._selected_project_path = s.project_path
+                    break
         self._refresh_project_view()
         self._update_status()
 
