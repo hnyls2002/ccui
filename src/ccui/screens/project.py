@@ -226,6 +226,16 @@ class ProjectScreen(ItemListScreen):
         elif prev is not None and prev < len(option_names):
             project_list.highlighted = prev
 
+    @staticmethod
+    def _format_permissions(label: str, rules: list[str]) -> list[str]:
+        lines = [f"{label} ({len(rules)} rules):"]
+        if rules:
+            for rule in rules:
+                lines.append(f"  {rule}")
+        else:
+            lines.append("  (none)")
+        return lines
+
     def _refresh_config_panel(self) -> None:
         gcfg = get_global_config()
         project = self._selected_project
@@ -239,8 +249,9 @@ class ProjectScreen(ItemListScreen):
                 )
             else:
                 lines.append("Global CLAUDE.md  : not found")
-            lines.append(
-                f"Global settings   : {gcfg.permission_count} permission rules"
+            lines.append("")
+            lines.extend(
+                self._format_permissions("Global permissions", gcfg.permission_rules)
             )
             self.query_one("#config-content", Static).update("\n".join(lines))
             return
@@ -261,13 +272,19 @@ class ProjectScreen(ItemListScreen):
             lines.append(
                 f"Auto Memory       : {' + '.join(mem_parts) if mem_parts else 'empty'}"
             )
-        lines.append(f"settings.local    : {cfg.permission_count} permission rules")
+        lines.append("")
+        lines.extend(
+            self._format_permissions("Project permissions", cfg.permission_rules)
+        )
         lines.append("")
         if gcfg.claude_md_path:
             lines.append(f"Global CLAUDE.md  : found ({gcfg.claude_md_lines} lines)")
         else:
             lines.append("Global CLAUDE.md  : not found")
-        lines.append(f"Global settings   : {gcfg.permission_count} permission rules")
+        lines.append("")
+        lines.extend(
+            self._format_permissions("Global permissions", gcfg.permission_rules)
+        )
         self.query_one("#config-content", Static).update("\n".join(lines))
 
     # ── Event handlers ────────────────────────────────────────────────

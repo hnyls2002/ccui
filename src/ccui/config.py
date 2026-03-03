@@ -61,6 +61,7 @@ class ConfigInfo:
     # Settings
     settings_path: Path | None
     permission_count: int
+    permission_rules: list[str]  # actual allow rules
 
 
 # ---------------------------------------------------------------------------
@@ -93,14 +94,14 @@ def _count_lines(path: Path) -> int:
         return 0
 
 
-def _count_permissions(settings_path: Path) -> int:
+def _read_permissions(settings_path: Path) -> list[str]:
     if not settings_path.exists():
-        return 0
+        return []
     try:
         data = json.loads(settings_path.read_text())
-        return len(data.get("permissions", {}).get("allow", []))
+        return data.get("permissions", {}).get("allow", [])
     except (json.JSONDecodeError, OSError):
-        return 0
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +210,8 @@ def get_project_config(project_path: str) -> ConfigInfo:
             if (p / ".claude" / "settings.local.json").exists()
             else None
         ),
-        permission_count=_count_permissions(p / ".claude" / "settings.local.json"),
+        permission_count=len(_read_permissions(p / ".claude" / "settings.local.json")),
+        permission_rules=_read_permissions(p / ".claude" / "settings.local.json"),
     )
 
 
@@ -230,7 +232,8 @@ def get_global_config() -> ConfigInfo:
             if (CLAUDE_DIR / "settings.json").exists()
             else None
         ),
-        permission_count=_count_permissions(CLAUDE_DIR / "settings.json"),
+        permission_count=len(_read_permissions(CLAUDE_DIR / "settings.json")),
+        permission_rules=_read_permissions(CLAUDE_DIR / "settings.json"),
     )
 
 
