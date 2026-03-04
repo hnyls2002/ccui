@@ -11,6 +11,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static, TextArea
 
+from ccui.data import resolve_cwd
 from ccui.notes import create_note
 from ccui.screens.dialogs import InputDialog
 
@@ -91,11 +92,17 @@ class ContentViewScreen(ModalScreen[None]):
         if not self._session:
             self.notify("No session to resume", severity="warning")
             return
+        cwd = resolve_cwd(self._session.project_path)
+        if self._session.project_path and cwd != self._session.project_path:
+            self.notify(
+                f"Directory gone, using {cwd or 'HOME'}",
+                severity="warning",
+            )
         self.dismiss(None)
         with self.app.suspend():
             subprocess.call(
                 ["claude", "--resume", self._session.session_id],
-                cwd=self._session.project_path or None,
+                cwd=cwd,
             )
 
     def action_export(self) -> None:

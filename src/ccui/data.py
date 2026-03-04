@@ -56,6 +56,26 @@ def _project_name_from_path(project_path: str) -> str:
     return name or "~"
 
 
+def resolve_cwd(project_path: str) -> str | None:
+    """Return a valid cwd for resuming a session.
+
+    If *project_path* exists, return it as-is.
+    Otherwise walk up to the nearest existing ancestor directory
+    (e.g. the parent repo when a worktree has been removed).
+    Returns ``None`` only when nothing useful can be found.
+    """
+    if not project_path:
+        return None
+    p = Path(project_path)
+    if p.is_dir():
+        return project_path
+    # Walk up to find the nearest existing ancestor
+    for parent in p.parents:
+        if parent.is_dir() and parent != Path(parent.root):
+            return str(parent)
+    return None
+
+
 def _read_original_path(project_dir: Path) -> str:
     """Read originalPath from sessions-index.json if available."""
     index_file = project_dir / "sessions-index.json"
@@ -71,16 +91,28 @@ def _read_original_path(project_dir: Path) -> str:
 def _dir_name_to_project_path(dir_name: str) -> str:
     """Convert a project directory name back to original path.
 
-    Claude Code encodes paths by replacing both / and _ with -.
+    Claude Code encodes paths by replacing ``/``, ``_``, and ``.`` with ``-``.
+    A dot-prefixed component like ``.worktrees`` becomes ``-worktrees`` which,
+    combined with the ``/`` separator, produces ``--worktrees`` in the encoded
+    name.  After ``split("-")``, ``--`` yields an empty string ``''`` — we use
+    that as a signal to prepend ``.`` to the next segment.
+
     We walk the filesystem greedily, trying to merge adjacent segments
-    with _ or - when a direct / split doesn't match.
+    with ``_``, ``-``, or ``.`` when a direct ``/`` split doesn't match.
     """
     parts = dir_name.lstrip("-").split("-")
     current = "/"
     i = 0
     while i < len(parts):
+        # Empty part from "--" means the next segment was dot-prefixed
+        if parts[i] == "" and i + 1 < len(parts):
+            dot_prefix = "."
+            i += 1
+        else:
+            dot_prefix = ""
+        segment = dot_prefix + parts[i]
         # Try single segment as a direct child
-        candidate = os.path.join(current, parts[i])
+        candidate = os.path.join(current, segment)
         if os.path.exists(candidate):
             current = candidate
             i += 1
@@ -89,7 +121,7 @@ def _dir_name_to_project_path(dir_name: str) -> str:
         found = False
         for j in range(i + 1, min(i + 4, len(parts) + 1)):
             for sep in ("_", "-", "."):
-                merged = sep.join(parts[i : j + 1])
+                merged = dot_prefix + sep.join(parts[i : j + 1])
                 candidate = os.path.join(current, merged)
                 if os.path.exists(candidate):
                     current = candidate
@@ -100,7 +132,7 @@ def _dir_name_to_project_path(dir_name: str) -> str:
                 break
         if not found:
             # Fallback: use segment as-is even if path doesn't exist
-            current = os.path.join(current, parts[i])
+            current = os.path.join(current, segment)
             i += 1
     return current
 

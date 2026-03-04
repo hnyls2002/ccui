@@ -20,6 +20,7 @@ from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Input, Static
 
+from ccui.data import resolve_cwd
 from ccui.logo import LOGO
 from ccui.notes import create_note
 from ccui.screens.dialogs import ConfirmDialog, InputDialog
@@ -328,10 +329,13 @@ class ItemListScreen(BaseViewScreen):
         if not session_id:
             self.notify("Not a session", severity="warning")
             return
+        cwd = resolve_cwd(project_path)
+        if project_path and cwd != project_path:
+            self.notify(f"Directory gone, using {cwd or 'HOME'}", severity="warning")
         with self.app.suspend():
             subprocess.call(
                 ["claude", "--resume", session_id],
-                cwd=project_path or None,
+                cwd=cwd,
             )
         self._refresh_all()
 
