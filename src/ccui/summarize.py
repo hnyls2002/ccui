@@ -63,7 +63,7 @@ def _extract_context(session: SessionInfo) -> str:
 def _call_claude(prompt: str) -> str:
     """Call local Claude Code CLI in print mode and return the response text."""
     result = subprocess.run(
-        ["claude", "-p", "--model", "haiku", prompt],
+        ["claude", "-p", "--model", "haiku", "--no-session-persistence", prompt],
         capture_output=True,
         text=True,
         timeout=30,
