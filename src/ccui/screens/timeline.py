@@ -57,6 +57,8 @@ class TimelineScreen(ItemListScreen):
         self._refreshing = False
 
     def _update_status(self) -> None:
+        from ccui.summarize import sessions_needing_summary
+
         total = len(self.store.sessions)
         archived = sum(
             1 for s in self.store.sessions if s.session_id in self.store.archived_ids
@@ -64,7 +66,10 @@ class TimelineScreen(ItemListScreen):
         table = self._get_active_table()
         visible = table.row_count if table else 0
         show_a = " | +archived" if self.store.show_archived else ""
+        unsummarized = len(sessions_needing_summary(self.store))
         status = f" [Timeline] {visible}/{total} sessions | {archived} archived{show_a}"
+        if unsummarized:
+            status += f" | {unsummarized} unsummarized"
         if self.store.search_query:
             status += f" | /{self.store.search_query}"
         self.query_one("#status-bar", Static).update(status)
