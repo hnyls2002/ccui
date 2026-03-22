@@ -34,6 +34,7 @@ class TimelineScreen(ItemListScreen):
         with Vertical(id="timeline-view"):
             yield DataTable(id="tl-table", cursor_type="row", classes="session-table")
             yield Static("", id="tl-table-preview", classes="preview")
+        yield Static("", id="summarize-bar", classes="summarize-bar")
         yield from self._compose_footer()
 
     # ── Abstract implementations ──────────────────────────────────────
@@ -81,21 +82,42 @@ class TimelineScreen(ItemListScreen):
         if not pending:
             self.notify("All sessions already have summaries")
             return
-        self.notify(f"Summarizing {len(pending)} sessions...")
+        bar = self.query_one("#summarize-bar", Static)
+        bar.display = True
+        self._update_progress_bar(0, len(pending), "starting...")
         self.run_worker(self._do_summarize, thread=True)
 
     def _do_summarize(self) -> None:
-        from ccui.summarize import generate_batch
+        from ccui.summarize import generate_batch, sessions_needing_summary
+
+        total = len(sessions_needing_summary(self.store))
 
         def on_progress(current: int, total: int, title: str) -> None:
-            self.app.call_from_thread(self.notify, f"[{current}/{total}] {title}")
+            self.app.call_from_thread(self._update_progress_bar, current, total, title)
 
         def on_done(count: int) -> None:
             self.app.call_from_thread(self._on_summarize_done, count)
 
         generate_batch(self.store, on_progress=on_progress, on_done=on_done)
 
+    def _update_progress_bar(self, current: int, total: int, title: str) -> None:
+        bar = self.query_one("#summarize-bar", Static)
+        width = max(self.size.width - 30, 10)
+        filled = int(width * current / total) if total > 0 else 0
+        empty = width - filled
+        pct = int(100 * current / total) if total > 0 else 0
+        bar.update(
+            f" Summarize: [{'█' * filled}{'░' * empty}] "
+            f"{current}/{total} ({pct}%)  {title}"
+        )
+
     def _on_summarize_done(self, count: int) -> None:
+        bar = self.query_one("#summarize-bar", Static)
+        bar.update(f" Done! Summarized {count} sessions")
+        self.set_timer(3.0, self._hide_progress_bar)
         self.store.reload()
         self._refresh_all()
-        self.notify(f"Done! Summarized {count} sessions")
+
+    def _hide_progress_bar(self) -> None:
+        bar = self.query_one("#summarize-bar", Static)
+        bar.display = False
