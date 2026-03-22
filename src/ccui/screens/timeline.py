@@ -107,7 +107,7 @@ class TimelineScreen(ItemListScreen):
 
     def _update_progress_bar(self, current: int, total: int, title: str) -> None:
         bar = self.query_one("#summarize-bar", Static)
-        width = max(self.size.width - 30, 10)
+        width = 20
         filled = int(width * current / total) if total > 0 else 0
         empty = width - filled
         # Escape [ ] to avoid Rich markup interpretation
