@@ -75,9 +75,7 @@ def _call_claude(prompt: str) -> str:
 
 def _needs_summary(session: SessionInfo, store: AppStore) -> bool:
     """Check if a session needs title/summary generation."""
-    has_title = bool(session.custom_title)
-    has_summary = bool(store.summaries.get(session.session_id))
-    return not (has_title and has_summary)
+    return not bool(store.summaries.get(session.session_id))
 
 
 def _save_summaries(summaries: dict[str, str]) -> None:
