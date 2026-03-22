@@ -20,6 +20,7 @@ class TimelineScreen(ItemListScreen):
         "H": "_action_toggle_show_archived",
         "x": "_action_export_item",
         "o": "_action_resume_session",
+        "S": "_action_summarize_all",
     }
 
     def __init__(self) -> None:
@@ -68,5 +69,33 @@ class TimelineScreen(ItemListScreen):
         self.query_one("#status-bar", Static).update(status)
         self.query_one("#help-bar", Static).update(
             " q:Quit  Tab:View  Enter:Open  o:Resume  d:Del  a:Archive"
-            "  H:Hidden  x:Export  /:Search  R:Reload  T:Theme"
+            "  H:Hidden  x:Export  S:Summarize  /:Search  R:Reload  T:Theme"
         )
+
+    # ── Batch summarize ───────────────────────────────────────────────
+
+    def _action_summarize_all(self) -> None:
+        from ccui.summarize import sessions_needing_summary
+
+        pending = sessions_needing_summary(self.store)
+        if not pending:
+            self.notify("All sessions already have summaries")
+            return
+        self.notify(f"Summarizing {len(pending)} sessions...")
+        self.run_worker(self._do_summarize, thread=True)
+
+    def _do_summarize(self) -> None:
+        from ccui.summarize import generate_batch
+
+        def on_progress(current: int, total: int, title: str) -> None:
+            self.app.call_from_thread(self.notify, f"[{current}/{total}] {title}")
+
+        def on_done(count: int) -> None:
+            self.app.call_from_thread(self._on_summarize_done, count)
+
+        generate_batch(self.store, on_progress=on_progress, on_done=on_done)
+
+    def _on_summarize_done(self, count: int) -> None:
+        self.store.reload()
+        self._refresh_all()
+        self.notify(f"Done! Summarized {count} sessions")
