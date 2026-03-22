@@ -75,7 +75,8 @@ class _BaseSessionsTab(TabHandler):
         lines: list[str] = []
         summary = store.display_summary(session)
         if summary:
-            lines.append(f"  [on dark_blue] ▸ {summary} [/]")
+            safe = summary.replace("[", "\\[")
+            lines.append(f"  [on dark_blue] ▸ {safe} [/]")
             lines.append(f"  {'─' * 50}")
         messages = load_session_messages(session.jsonl_path, max_messages=4)
         for msg in messages:
