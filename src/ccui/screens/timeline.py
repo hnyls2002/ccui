@@ -110,11 +110,10 @@ class TimelineScreen(ItemListScreen):
         width = max(self.size.width - 30, 10)
         filled = int(width * current / total) if total > 0 else 0
         empty = width - filled
-        pct = int(100 * current / total) if total > 0 else 0
         # Escape [ ] to avoid Rich markup interpretation
         bar.update(
             f" Summarize: \\[{'█' * filled}{'░' * empty}] "
-            f"{current}/{total} ({pct}%)  {title}"
+            f"{current}/{total}  {title}"
         )
 
     def _on_summarize_done(self, count: int) -> None:
