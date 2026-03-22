@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from rich.text import Text
 from textual.widgets import DataTable
 
 from ccui.archive import toggle_archive
@@ -70,20 +71,18 @@ class _BaseSessionsTab(TabHandler):
         label = "Archived" if new_state else "Unarchived"
         return f"{label}: {store.display_title(session)[:40]}"
 
-    def get_preview(self, item: Any, store: AppStore) -> str:
+    def get_preview(self, item: Any, store: AppStore) -> Text | str:
         session: SessionInfo = item
-        lines: list[str] = []
+        result = Text()
         summary = store.display_summary(session)
         if summary:
-            safe = summary.replace("[", "\\[")
-            lines.append(f"  [on dark_blue] ▸ {safe} [/]")
-            lines.append(f"  {'─' * 50}")
+            result.append(f"  ▸ {summary}\n", style="white on blue")
         messages = load_session_messages(session.jsonl_path, max_messages=4)
         for msg in messages:
             role = "USER" if msg["role"] == "user" else "ASST"
             text = msg["text"].replace("\n", " ")[:100]
-            lines.append(f"  {role}: {text}")
-        return "\n".join(lines) if lines else "  (no messages)"
+            result.append(f"  {role}: {text}\n")
+        return result if result.plain else "  (no messages)"
 
     def get_export_content(self, item: Any, store: AppStore) -> tuple[str, str] | None:
         session: SessionInfo = item
