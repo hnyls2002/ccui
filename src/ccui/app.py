@@ -44,7 +44,7 @@ class CcuiApp(App):
             tl._summarize_cancel.set()
         except Exception:
             pass
-        super().action_quit()
+        self.exit()
 
     def action_cycle_theme(self) -> None:
         current = self.theme

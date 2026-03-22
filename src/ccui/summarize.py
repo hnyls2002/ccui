@@ -61,17 +61,31 @@ def _extract_context(session: SessionInfo) -> str:
     return "\n---\n".join(parts)
 
 
-def _call_claude(prompt: str) -> str:
-    """Call local Claude Code CLI in print mode and return the response text."""
-    result = subprocess.run(
+def _call_claude(prompt: str, cancel: threading.Event | None = None) -> str:
+    """Call local Claude Code CLI in print mode and return the response text.
+
+    If *cancel* is set while the subprocess is running, kill it immediately.
+    """
+    proc = subprocess.Popen(
         ["claude", "-p", "--model", "haiku", "--no-session-persistence", prompt],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=30,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"claude exited with {result.returncode}: {result.stderr}")
-    return result.stdout.strip()
+    # Poll so we can react to cancel quickly
+    while proc.poll() is None:
+        if cancel and cancel.is_set():
+            proc.kill()
+            raise RuntimeError("cancelled")
+        try:
+            proc.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            pass
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"claude exited with {proc.returncode}: {proc.stderr.read()}"
+        )
+    return (proc.stdout.read() or "").strip()
 
 
 def _needs_summary(session: SessionInfo, store: AppStore) -> bool:
@@ -144,7 +158,7 @@ def generate_batch(
         prompt = PROMPT_TEMPLATE.format(context=context, n_head=n_head, n_tail=n_tail)
 
         try:
-            raw = _call_claude(prompt)
+            raw = _call_claude(prompt, cancel=cancel)
             # Strip markdown code fences if present
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
