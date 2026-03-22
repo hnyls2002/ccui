@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
@@ -26,6 +28,7 @@ class TimelineScreen(ItemListScreen):
     def __init__(self) -> None:
         super().__init__()
         self._timeline = TimelineTab()
+        self._summarize_cancel = threading.Event()
 
     # ── Compose ───────────────────────────────────────────────────────
 
@@ -87,15 +90,14 @@ class TimelineScreen(ItemListScreen):
         if not pending:
             self.notify("All sessions already have summaries")
             return
+        self._summarize_cancel.clear()
         bar = self.query_one("#summarize-bar", Static)
         bar.display = True
         self._update_progress_bar(0, len(pending), "starting...")
         self.run_worker(self._do_summarize, thread=True)
 
     def _do_summarize(self) -> None:
-        from ccui.summarize import generate_batch, sessions_needing_summary
-
-        total = len(sessions_needing_summary(self.store))
+        from ccui.summarize import generate_batch
 
         def on_progress(current: int, total: int, title: str) -> None:
             self.app.call_from_thread(self._update_progress_bar, current, total, title)
@@ -103,7 +105,12 @@ class TimelineScreen(ItemListScreen):
         def on_done(count: int) -> None:
             self.app.call_from_thread(self._on_summarize_done, count)
 
-        generate_batch(self.store, on_progress=on_progress, on_done=on_done)
+        generate_batch(
+            self.store,
+            on_progress=on_progress,
+            on_done=on_done,
+            cancel=self._summarize_cancel,
+        )
 
     def _update_progress_bar(self, current: int, total: int, title: str) -> None:
         bar = self.query_one("#summarize-bar", Static)

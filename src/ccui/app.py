@@ -37,6 +37,15 @@ class CcuiApp(App):
             self._view_mode = "timeline"
         self.switch_screen(self._view_mode)
 
+    def action_quit(self) -> None:
+        # Cancel any running summarize worker before exiting
+        try:
+            tl = self.get_screen("timeline")
+            tl._summarize_cancel.set()
+        except Exception:
+            pass
+        super().action_quit()
+
     def action_cycle_theme(self) -> None:
         current = self.theme
         try:

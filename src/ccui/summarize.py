@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import threading
 from typing import TYPE_CHECKING, Callable
 
 from ccui.constants import CLAUDE_DIR
@@ -101,16 +102,19 @@ def generate_batch(
     store: AppStore,
     on_progress: Callable[[int, int, str], None] | None = None,
     on_done: Callable[[int], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> int:
     """Synchronously generate titles/summaries for all sessions that need them.
 
     Calls `claude -p --model haiku` for each session — no API key needed,
-    uses the local Claude Code installation.
+    uses the local Claude Code installation.  Summaries are persisted to
+    disk after each successful generation so nothing is lost on exit.
 
     Args:
         store: AppStore with loaded sessions.
         on_progress: Called with (current, total, title) after each session.
         on_done: Called with total generated count when finished.
+        cancel: If set, abort the batch early.
 
     Returns:
         Number of sessions summarized.
@@ -124,6 +128,9 @@ def generate_batch(
 
     count = 0
     for i, session in enumerate(pending):
+        if cancel and cancel.is_set():
+            break
+
         context = _extract_context(session)
         if not context:
             if on_progress:
@@ -156,14 +163,11 @@ def generate_batch(
 
         if summary:
             store.summaries[session.session_id] = summary
+            _save_summaries(store.summaries)
 
         count += 1
         if on_progress:
             on_progress(i + 1, len(pending), title)
-
-    # Persist summaries
-    if count > 0:
-        _save_summaries(store.summaries)
 
     if on_done:
         on_done(count)
