@@ -91,8 +91,13 @@ def _call_claude(prompt: str, cancel: threading.Event | None = None) -> str:
 
 
 def _needs_summary(session: SessionInfo, store: AppStore) -> bool:
-    """Check if a session needs title/summary generation."""
-    return not bool(store.summaries.get(session.session_id))
+    """Check if a session needs title/summary generation.
+
+    A session is only considered summarized when it has BOTH a title and a summary.
+    """
+    has_summary = bool(store.summaries.get(session.session_id))
+    has_title = bool(session.custom_title)
+    return not (has_summary and has_title)
 
 
 def _save_summaries(summaries: dict[str, str]) -> None:
@@ -173,13 +178,25 @@ def generate_batch(
                 on_progress(i + 1, len(pending), "(error)")
             continue
 
-        if title and not session.custom_title:
+        # Both title and summary must be present; skip if either is missing
+        # so the session will be retried next time.
+        if not title or not summary:
+            logger.warning(
+                "Incomplete response for %s (title=%r, summary=%r), will retry",
+                session.session_id[:8],
+                bool(title),
+                bool(summary),
+            )
+            if on_progress:
+                on_progress(i + 1, len(pending), "(incomplete)")
+            continue
+
+        if not session.custom_title:
             _append_custom_title(session, title)
             session.custom_title = title
 
-        if summary:
-            store.summaries[session.session_id] = summary
-            _save_summaries(store.summaries)
+        store.summaries[session.session_id] = summary
+        _save_summaries(store.summaries)
 
         count += 1
         if on_progress:
