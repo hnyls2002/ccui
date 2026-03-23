@@ -18,6 +18,21 @@ pip install -e .
 ccui
 ```
 
+## Testing
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+Run a subset:
+
+```bash
+pytest tests/test_data.py           # single module
+pytest -k "slugify"                 # by keyword
+pytest tests/test_edge_cases.py::TestSlugifyEdgeCases::test_chinese_title  # single test
+```
+
 ## Views
 
 `Tab` switches between two views:
@@ -121,4 +136,4 @@ Dark: textual-dark, nord, dracula, tokyo-night, gruvbox, catppuccin-mocha
 
 ### Search
 
-Press `/` to filter across session titles, summaries, project names, and git branches.
+Press `/` to filter across session titles, summaries, and project names.
