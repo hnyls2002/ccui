@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from ccui.data import SessionInfo
-from ccui.store import AppStore
+from ccui.store import AppStore, _load_note_summaries, _load_summaries
 
 
 def _make_session(
@@ -163,3 +165,50 @@ class TestProjectNames:
             _make_session(sid="s3", project_name="beta"),
         ]
         assert store.project_names == ["alpha", "beta"]
+
+
+# ── _load_summaries / _load_note_summaries ───────────────────────────
+
+
+class TestLoadSummaries:
+    def test_loads_valid(self, tmp_path):
+        f = tmp_path / "summaries.json"
+        f.write_text(json.dumps({"s1": "summary one", "s2": "summary two"}))
+        with patch("ccui.store.SUMMARIES_FILE", f):
+            result = _load_summaries()
+            assert result == {"s1": "summary one", "s2": "summary two"}
+
+    def test_missing_file(self, tmp_path):
+        with patch("ccui.store.SUMMARIES_FILE", tmp_path / "nope.json"):
+            assert _load_summaries() == {}
+
+    def test_corrupt_json(self, tmp_path):
+        f = tmp_path / "bad.json"
+        f.write_text("not json")
+        with patch("ccui.store.SUMMARIES_FILE", f):
+            assert _load_summaries() == {}
+
+    def test_non_dict_json(self, tmp_path):
+        f = tmp_path / "list.json"
+        f.write_text(json.dumps(["a", "b"]))
+        with patch("ccui.store.SUMMARIES_FILE", f):
+            assert _load_summaries() == {}
+
+
+class TestLoadNoteSummaries:
+    def test_loads_valid(self, tmp_path):
+        f = tmp_path / "note-summaries.json"
+        f.write_text(json.dumps({"/a/b.md": "note summary"}))
+        with patch("ccui.store.NOTE_SUMMARIES_FILE", f):
+            result = _load_note_summaries()
+            assert result == {"/a/b.md": "note summary"}
+
+    def test_missing_file(self, tmp_path):
+        with patch("ccui.store.NOTE_SUMMARIES_FILE", tmp_path / "nope.json"):
+            assert _load_note_summaries() == {}
+
+    def test_corrupt_json(self, tmp_path):
+        f = tmp_path / "bad.json"
+        f.write_text("bad")
+        with patch("ccui.store.NOTE_SUMMARIES_FILE", f):
+            assert _load_note_summaries() == {}
