@@ -265,16 +265,15 @@ class TestExtractContextBoundary:
 
 class TestReadNoteContentEdgeCases:
     def test_unclosed_frontmatter(self, tmp_path):
-        """Frontmatter without closing --- leaks metadata into content."""
+        """Unclosed frontmatter: opening --- is stripped, rest treated as body."""
         p = tmp_path / "bad.md"
         p.write_text("---\ntitle: Leaked\nThis is not frontmatter\n\n# Real content\n")
         note = NoteInfo(title="X", created="", session_id="", path=p, kind="note")
         content = _read_note_content(note)
-        # BUG: unclosed frontmatter means the whole file including "title: Leaked"
-        # is returned as content, contaminating the summarization prompt
-        has_metadata = "title: Leaked" in content
-        # Document the current behavior
-        assert has_metadata, "Unclosed frontmatter is now handled — update test"
+        # Opening --- is stripped; remaining lines (including "title: Leaked") remain
+        # since we can't distinguish frontmatter from body without closing ---
+        assert "---" not in content.split("\n")[0] if content else True
+        assert "Real content" in content
 
     def test_empty_frontmatter(self, tmp_path):
         p = tmp_path / "empty_fm.md"

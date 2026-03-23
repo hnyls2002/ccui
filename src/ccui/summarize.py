@@ -231,10 +231,15 @@ def _read_note_content(note: NoteInfo) -> str:
         return ""
     lines = text.splitlines()
     if lines and lines[0].strip() == "---":
+        closed = False
         for i, line in enumerate(lines[1:], 1):
             if line.strip() == "---":
                 lines = lines[i + 1 :]
+                closed = True
                 break
+        if not closed:
+            # Unclosed frontmatter — skip the opening --- line at minimum
+            lines = lines[1:]
     content = "\n".join(lines).strip()
     # Truncate to ~2000 chars for the prompt
     return content[:2000]
