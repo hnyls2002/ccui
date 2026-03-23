@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from ccui.data import SessionInfo
 from ccui.notes import NoteInfo
 from ccui.store import AppStore
 from ccui.summarize import (
     SAMPLE_SIZE,
+    _append_custom_title,
     _extract_context,
     _needs_summary,
     _read_note_content,
+    _save_note_summaries,
+    _save_summaries,
     notes_needing_summary,
     sessions_needing_summary,
 )
@@ -190,3 +194,78 @@ class TestNotesNeedingSummary:
         result = notes_needing_summary([n1, n2], store)
         assert len(result) == 1
         assert result[0].title == "A"
+
+
+# ── _save_summaries ──────────────────────────────────────────────────
+
+
+class TestSaveSummaries:
+    def test_writes_json(self, tmp_path):
+        f = tmp_path / "summaries.json"
+        with patch("ccui.summarize.SUMMARIES_FILE", f):
+            _save_summaries({"s1": "sum1", "s2": "sum2"})
+        data = json.loads(f.read_text())
+        assert data == {"s1": "sum1", "s2": "sum2"}
+
+    def test_unicode(self, tmp_path):
+        f = tmp_path / "summaries.json"
+        with patch("ccui.summarize.SUMMARIES_FILE", f):
+            _save_summaries({"s1": "修复 auth 问题"})
+        content = f.read_text()
+        assert "修复" in content  # ensure_ascii=False
+
+
+class TestSaveNoteSummaries:
+    def test_writes_json(self, tmp_path):
+        f = tmp_path / "note-summaries.json"
+        with patch("ccui.summarize.NOTE_SUMMARIES_FILE", f):
+            _save_note_summaries({"/a/b.md": "note sum"})
+        data = json.loads(f.read_text())
+        assert data == {"/a/b.md": "note sum"}
+
+
+# ── _append_custom_title ─────────────────────────────────────────────
+
+
+class TestAppendCustomTitle:
+    def test_appends_to_jsonl(self, tmp_path):
+        jsonl = tmp_path / "s1.jsonl"
+        jsonl.write_text('{"type":"user","message":{"content":"hi"}}\n')
+        s = SessionInfo(
+            session_id="s1",
+            project_path="/x",
+            project_name="x",
+            first_prompt="hi",
+            slug="",
+            custom_title="",
+            message_count=1,
+            created=datetime(2025, 1, 1),
+            modified=datetime(2025, 1, 1),
+            git_branch="",
+            jsonl_path=jsonl,
+        )
+        _append_custom_title(s, "new-title")
+        lines = jsonl.read_text().strip().split("\n")
+        assert len(lines) == 2
+        last = json.loads(lines[-1])
+        assert last["customTitle"] == "new-title"
+
+    def test_unicode_title(self, tmp_path):
+        jsonl = tmp_path / "s2.jsonl"
+        jsonl.write_text("")
+        s = SessionInfo(
+            session_id="s2",
+            project_path="/x",
+            project_name="x",
+            first_prompt="",
+            slug="",
+            custom_title="",
+            message_count=0,
+            created=None,
+            modified=None,
+            git_branch="",
+            jsonl_path=jsonl,
+        )
+        _append_custom_title(s, "修复-bug")
+        content = jsonl.read_text()
+        assert "修复-bug" in content
