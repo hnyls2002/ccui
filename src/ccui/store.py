@@ -71,7 +71,6 @@ class AppStore:
                 if q in self.display_title(s).lower()
                 or q in self.display_summary(s).lower()
                 or q in s.project_name.lower()
-                or q in s.git_branch.lower()
             ]
         return sessions
 

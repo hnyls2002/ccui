@@ -102,7 +102,7 @@ class TimelineTab(_BaseSessionsTab):
     table_id = "tl-table"
 
     def setup_columns(self, table: DataTable) -> None:
-        table.add_columns("", "Project", "Title", "Msgs", "Date", "Branch")
+        table.add_columns("", "Project", "Title", "Msgs", "Date")
 
     def refresh(
         self, table: DataTable, store: AppStore, project: str, project_path: str
@@ -117,7 +117,6 @@ class TimelineTab(_BaseSessionsTab):
                 store.display_title(s),
                 str(s.message_count),
                 s.date_str,
-                s.git_branch,
                 key=s.session_id,
             )
 
@@ -130,7 +129,7 @@ class SessionsTab(_BaseSessionsTab):
     table_id = "pv-session-table"
 
     def setup_columns(self, table: DataTable) -> None:
-        table.add_columns("", "Title", "Msgs", "Date", "Branch")
+        table.add_columns("", "Title", "Msgs", "Date")
 
     def refresh(
         self, table: DataTable, store: AppStore, project: str, project_path: str
@@ -144,6 +143,5 @@ class SessionsTab(_BaseSessionsTab):
                 store.display_title(s),
                 str(s.message_count),
                 s.date_str,
-                s.git_branch,
                 key=s.session_id,
             )
