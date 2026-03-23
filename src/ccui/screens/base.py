@@ -192,8 +192,6 @@ class ItemListScreen(BaseViewScreen):
         table = self._get_active_table()
         if table:
             table.focus()
-            if table.row_count > 0:
-                table.move_cursor(row=0)
 
     # ── Refresh (with cursor save/restore) ────────────────────────────
 
