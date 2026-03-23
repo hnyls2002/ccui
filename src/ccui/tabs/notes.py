@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from rich.text import Text
 from textual.widgets import DataTable
 
 from ccui.config import read_file_content
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 class NotesTab(TabHandler):
     """Handles both Plans and Notes tabs (parameterized by kind)."""
 
-    has_preview = False
+    has_preview = True
 
     def __init__(self, kind: str) -> None:
         self.kind = kind  # "plan" or "note"
@@ -63,6 +64,30 @@ class NotesTab(TabHandler):
     def delete_info(self, item: Any, store: AppStore) -> tuple[str, callable] | None:
         note: NoteInfo = item
         return f"Delete {note.kind} '{note.title}'?", lambda: delete_note(note)
+
+    def get_preview(self, item: Any, store: AppStore) -> Text | str:
+        note: NoteInfo = item
+        result = Text()
+        summary = store.note_summaries.get(str(note.path), "")
+        if summary:
+            result.append(f"  ▸ {summary}\n", style="white on blue")
+        content = read_file_content(note.path)
+        # Strip frontmatter
+        lines = content.splitlines()
+        if lines and lines[0].strip() == "---":
+            for i, line in enumerate(lines[1:], 1):
+                if line.strip() == "---":
+                    lines = lines[i + 1 :]
+                    break
+        # Skip leading blank lines
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+        preview_lines = lines[:8]
+        for line in preview_lines:
+            result.append(f"  {line}\n")
+        if len(lines) > 8:
+            result.append(f"  ... ({len(lines) - 8} more lines)\n", style="dim")
+        return result if result.plain else "  (empty)"
 
     def edit_path(self, item: Any) -> Path | None:
         return item.path

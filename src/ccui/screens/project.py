@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 from pathlib import Path
 
 from textual import on
@@ -36,6 +37,7 @@ class ProjectScreen(ItemListScreen):
         "e": "_action_edit_external",
         "x": "_action_export_item",
         "o": "_action_resume_session",
+        "S": "_action_summarize_notes",
         "h": "_action_tab_prev",
         "l": "_action_tab_next",
         "1": "_action_goto_tab_1",
@@ -60,6 +62,7 @@ class ProjectScreen(ItemListScreen):
         self._selected_project: str = "GLOBAL"
         self._selected_project_path: str = ""
         self._active_tab = "sessions"
+        self._summarize_cancel = threading.Event()
         self._project_tabs: dict[str, TabHandler] = {
             "sessions": SessionsTab(),
             "plans": NotesTab("plan"),
@@ -91,6 +94,7 @@ class ProjectScreen(ItemListScreen):
                                 )
                     with TabPane("Config", id="tab-config"):
                         yield Static("", id="config-content")
+        yield Static("", id="note-summarize-bar", classes="summarize-bar")
         yield from self._compose_footer()
 
     # ── Abstract implementations ──────────────────────────────────────
@@ -139,7 +143,8 @@ class ProjectScreen(ItemListScreen):
         self.query_one("#status-bar", Static).update(status)
         self.query_one("#help-bar", Static).update(
             " q:Quit  Tab:View  h/l:Tab  1-6:Tab#  Enter:Open  o:Resume"
-            "  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export  /:Search  R:Reload  T:Theme"
+            "  d:Del  a:Archive  H:Hidden  r:Rename  n:New  e:Edit  x:Export"
+            "  S:Summarize  /:Search  R:Reload  T:Theme"
         )
 
     # ── Override: project path resolution ─────────────────────────────
@@ -216,6 +221,66 @@ class ProjectScreen(ItemListScreen):
         self.app.push_screen(
             InputDialog(f"New {label} title:", f"my-{label}"), callback=on_title
         )
+
+    # ── Batch summarize notes/plans ──────────────────────────────────
+
+    def _action_summarize_notes(self) -> None:
+        if self._active_tab not in ("plans", "notes"):
+            self.notify("Switch to Plans or Notes tab first", severity="warning")
+            return
+        from ccui.notes import scan_notes
+        from ccui.summarize import notes_needing_summary
+
+        handler = self._project_tabs[self._active_tab]
+        kind = handler.kind
+        notes = scan_notes(self._selected_project_path, kind)
+        pending = notes_needing_summary(notes, self.store)
+        if not pending:
+            self.notify(f"All {kind}s already have summaries")
+            return
+        self._summarize_cancel.clear()
+        bar = self.query_one("#note-summarize-bar", Static)
+        bar.display = True
+        self._update_note_progress(0, len(pending), "starting...")
+        self.run_worker(lambda: self._do_summarize_notes(notes), thread=True)
+
+    def _do_summarize_notes(self, notes: list) -> None:
+        from ccui.summarize import generate_note_batch
+
+        def on_progress(current: int, total: int, title: str) -> None:
+            self.app.call_from_thread(self._update_note_progress, current, total, title)
+
+        def on_done(count: int) -> None:
+            self.app.call_from_thread(self._on_note_summarize_done, count)
+
+        generate_note_batch(
+            notes,
+            self.store,
+            on_progress=on_progress,
+            on_done=on_done,
+            cancel=self._summarize_cancel,
+        )
+
+    def _update_note_progress(self, current: int, total: int, title: str) -> None:
+        bar = self.query_one("#note-summarize-bar", Static)
+        width = 20
+        filled = int(width * current / total) if total > 0 else 0
+        empty = width - filled
+        bar.update(
+            f" Summarize: \\[{'█' * filled}{'░' * empty}] "
+            f"{current}/{total}  {title}"
+        )
+
+    def _on_note_summarize_done(self, count: int) -> None:
+        bar = self.query_one("#note-summarize-bar", Static)
+        bar.update(f" Done! Summarized {count} items")
+        self.set_timer(3.0, self._hide_note_progress)
+        self.store.reload()
+        self._refresh_all()
+
+    def _hide_note_progress(self) -> None:
+        bar = self.query_one("#note-summarize-bar", Static)
+        bar.display = False
 
     # ── Project list ──────────────────────────────────────────────────
 

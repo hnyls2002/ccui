@@ -1,4 +1,4 @@
-"""Batch-generate titles and summaries for sessions using local Claude Code CLI."""
+"""Batch-generate titles and summaries for sessions and notes using local Claude Code CLI."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Callable
 
 from ccui.constants import CLAUDE_DIR
 from ccui.data import SessionInfo, load_session_messages
+from ccui.notes import NoteInfo
 
 if TYPE_CHECKING:
     from ccui.store import AppStore
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SUMMARIES_FILE = CLAUDE_DIR / "ccui-summaries.json"
+NOTE_SUMMARIES_FILE = CLAUDE_DIR / "ccui-note-summaries.json"
 SAMPLE_SIZE = 6
 
 PROMPT_TEMPLATE = """\
@@ -182,6 +184,102 @@ def generate_batch(
         count += 1
         if on_progress:
             on_progress(i + 1, len(pending), title)
+
+    if on_done:
+        on_done(count)
+
+    return count
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Note / Plan summaries
+# ═══════════════════════════════════════════════════════════════════════
+
+NOTE_PROMPT_TEMPLATE = """\
+Based on this {kind} file content, generate a one-line summary (max 80 chars, \
+mixed Chinese-English if the content is in Chinese).
+
+Respond in EXACTLY this JSON format, nothing else:
+{{"summary": "..."}}
+
+Content:
+{content}"""
+
+
+def _read_note_content(note: NoteInfo) -> str:
+    """Read note content, stripping frontmatter."""
+    try:
+        text = note.path.read_text()
+    except OSError:
+        return ""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for i, line in enumerate(lines[1:], 1):
+            if line.strip() == "---":
+                lines = lines[i + 1 :]
+                break
+    content = "\n".join(lines).strip()
+    # Truncate to ~2000 chars for the prompt
+    return content[:2000]
+
+
+def _save_note_summaries(summaries: dict[str, str]) -> None:
+    NOTE_SUMMARIES_FILE.write_text(
+        json.dumps(summaries, indent=2, ensure_ascii=False) + "\n"
+    )
+
+
+def notes_needing_summary(notes: list[NoteInfo], store: AppStore) -> list[NoteInfo]:
+    return [n for n in notes if not store.note_summaries.get(str(n.path))]
+
+
+def generate_note_batch(
+    notes: list[NoteInfo],
+    store: AppStore,
+    on_progress: Callable[[int, int, str], None] | None = None,
+    on_done: Callable[[int], None] | None = None,
+    cancel: threading.Event | None = None,
+) -> int:
+    """Generate summaries for notes/plans that lack them."""
+    pending = notes_needing_summary(notes, store)
+
+    if not pending:
+        if on_done:
+            on_done(0)
+        return 0
+
+    count = 0
+    for i, note in enumerate(pending):
+        if cancel and cancel.is_set():
+            break
+
+        content = _read_note_content(note)
+        if not content:
+            if on_progress:
+                on_progress(i + 1, len(pending), "(skipped)")
+            continue
+
+        prompt = NOTE_PROMPT_TEMPLATE.format(kind=note.kind, content=content)
+
+        try:
+            raw = _call_claude(prompt, cancel=cancel)
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            result = json.loads(raw)
+            summary = result.get("summary", "").strip()
+        except Exception:
+            logger.warning("Failed to summarize %s %s", note.kind, note.path.name)
+            if on_progress:
+                on_progress(i + 1, len(pending), "(error)")
+            continue
+
+        if summary:
+            store.note_summaries[str(note.path)] = summary
+            _save_note_summaries(store.note_summaries)
+
+        count += 1
+        if on_progress:
+            on_progress(i + 1, len(pending), note.title)
 
     if on_done:
         on_done(count)

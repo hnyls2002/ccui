@@ -9,6 +9,7 @@ from ccui.constants import CLAUDE_DIR
 from ccui.data import SessionInfo, get_project_names, load_all_sessions
 
 SUMMARIES_FILE = CLAUDE_DIR / "ccui-summaries.json"
+NOTE_SUMMARIES_FILE = CLAUDE_DIR / "ccui-note-summaries.json"
 
 
 def _load_summaries() -> dict[str, str]:
@@ -21,11 +22,22 @@ def _load_summaries() -> dict[str, str]:
     return {}
 
 
+def _load_note_summaries() -> dict[str, str]:
+    try:
+        data = json.loads(NOTE_SUMMARIES_FILE.read_text())
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {}
+
+
 class AppStore:
     def __init__(self) -> None:
         self.sessions: list[SessionInfo] = []
         self.archived_ids: set[str] = set()
         self.summaries: dict[str, str] = {}
+        self.note_summaries: dict[str, str] = {}  # file path -> summary
         # View state
         self.show_archived: bool = False
         self.search_query: str = ""
@@ -34,6 +46,7 @@ class AppStore:
         self.sessions = load_all_sessions()
         self.archived_ids = get_archived_ids()
         self.summaries = _load_summaries()
+        self.note_summaries = _load_note_summaries()
 
     def reload_archived(self) -> None:
         self.archived_ids = get_archived_ids()
