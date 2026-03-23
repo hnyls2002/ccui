@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from ccui.data import (
     SessionInfo,
+    _load_sessions_from_index,
     _parse_iso_datetime,
     _parse_session_from_jsonl,
     _parse_timestamp,
     _project_name_from_path,
+    _read_original_path,
     _read_slug_and_title,
+    delete_session,
     get_project_names,
     load_session_messages,
+    resolve_cwd,
 )
 
 # ── _project_name_from_path ──────────────────────────────────────────
@@ -377,3 +382,174 @@ class TestGetProjectNames:
 
     def test_empty(self):
         assert get_project_names([]) == []
+
+
+# ── resolve_cwd ──────────────────────────────────────────────────────
+
+
+class TestResolveCwd:
+    def test_existing_dir(self, tmp_path):
+        assert resolve_cwd(str(tmp_path)) == str(tmp_path)
+
+    def test_missing_dir_walks_up(self, tmp_path):
+        missing = tmp_path / "a" / "b" / "c"
+        # tmp_path exists but a/b/c doesn't — should walk up to tmp_path
+        result = resolve_cwd(str(missing))
+        assert result is not None
+        assert Path(result).is_dir()
+
+    def test_empty_string(self):
+        assert resolve_cwd("") is None
+
+    def test_subdir_exists(self, tmp_path):
+        sub = tmp_path / "real"
+        sub.mkdir()
+        assert resolve_cwd(str(sub)) == str(sub)
+
+
+# ── _read_original_path ─────────────────────────────────────────────
+
+
+class TestReadOriginalPath:
+    def test_reads_path(self, tmp_path):
+        index = tmp_path / "sessions-index.json"
+        index.write_text('{"originalPath": "/Users/x/proj"}')
+        assert _read_original_path(tmp_path) == "/Users/x/proj"
+
+    def test_missing_index(self, tmp_path):
+        assert _read_original_path(tmp_path) == ""
+
+    def test_corrupt_json(self, tmp_path):
+        (tmp_path / "sessions-index.json").write_text("not json")
+        assert _read_original_path(tmp_path) == ""
+
+    def test_no_original_path_key(self, tmp_path):
+        (tmp_path / "sessions-index.json").write_text('{"entries": []}')
+        assert _read_original_path(tmp_path) == ""
+
+
+# ── _load_sessions_from_index ────────────────────────────────────────
+
+
+class TestLoadSessionsFromIndex:
+    def test_loads_entries(self, tmp_path):
+        # Create a JSONL file for the session
+        jsonl = tmp_path / "sess-abc.jsonl"
+        jsonl.write_text('{"slug": "my-slug"}\n')
+
+        index = tmp_path / "sessions-index.json"
+        index.write_text(
+            '{"originalPath": "/x/proj", "entries": ['
+            '{"sessionId": "sess-abc", "firstPrompt": "hello", '
+            '"messageCount": 3, "created": "2025-01-15T10:00:00Z", '
+            '"modified": "2025-01-15T12:00:00Z", "gitBranch": "main"}'
+            "]}"
+        )
+        sessions = _load_sessions_from_index(tmp_path)
+        assert len(sessions) == 1
+        s = sessions[0]
+        assert s.session_id == "sess-abc"
+        assert s.project_path == "/x/proj"
+        assert s.first_prompt == "hello"
+        assert s.message_count == 3
+        assert s.slug == "my-slug"
+
+    def test_missing_index(self, tmp_path):
+        assert _load_sessions_from_index(tmp_path) == []
+
+    def test_corrupt_index(self, tmp_path):
+        (tmp_path / "sessions-index.json").write_text("bad json")
+        assert _load_sessions_from_index(tmp_path) == []
+
+    def test_empty_entries(self, tmp_path):
+        (tmp_path / "sessions-index.json").write_text(
+            '{"originalPath": "/x", "entries": []}'
+        )
+        assert _load_sessions_from_index(tmp_path) == []
+
+
+# ── delete_session ───────────────────────────────────────────────────
+
+
+class TestDeleteSession:
+    def test_deletes_jsonl(self, tmp_path):
+        jsonl = tmp_path / "s1.jsonl"
+        jsonl.write_text("data")
+        s = SessionInfo(
+            session_id="s1",
+            project_path="/x",
+            project_name="x",
+            first_prompt="",
+            slug="",
+            custom_title="",
+            message_count=0,
+            created=None,
+            modified=None,
+            git_branch="",
+            jsonl_path=jsonl,
+        )
+        assert delete_session(s) is True
+        assert not jsonl.exists()
+
+    def test_deletes_companion_dir(self, tmp_path):
+        jsonl = tmp_path / "s1.jsonl"
+        jsonl.write_text("data")
+        companion = tmp_path / "s1"
+        companion.mkdir()
+        (companion / "file.txt").write_text("snapshot")
+        s = SessionInfo(
+            session_id="s1",
+            project_path="/x",
+            project_name="x",
+            first_prompt="",
+            slug="",
+            custom_title="",
+            message_count=0,
+            created=None,
+            modified=None,
+            git_branch="",
+            jsonl_path=jsonl,
+        )
+        assert delete_session(s) is True
+        assert not companion.exists()
+
+    def test_removes_from_index(self, tmp_path):
+        jsonl = tmp_path / "s1.jsonl"
+        jsonl.write_text("data")
+        index = tmp_path / "sessions-index.json"
+        index.write_text('{"entries": [{"sessionId": "s1"}, {"sessionId": "s2"}]}')
+        s = SessionInfo(
+            session_id="s1",
+            project_path="/x",
+            project_name="x",
+            first_prompt="",
+            slug="",
+            custom_title="",
+            message_count=0,
+            created=None,
+            modified=None,
+            git_branch="",
+            jsonl_path=jsonl,
+        )
+        delete_session(s)
+        import json
+
+        data = json.loads(index.read_text())
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["sessionId"] == "s2"
+
+    def test_missing_jsonl_ok(self, tmp_path):
+        s = SessionInfo(
+            session_id="ghost",
+            project_path="/x",
+            project_name="x",
+            first_prompt="",
+            slug="",
+            custom_title="",
+            message_count=0,
+            created=None,
+            modified=None,
+            git_branch="",
+            jsonl_path=tmp_path / "ghost.jsonl",
+        )
+        assert delete_session(s) is True
