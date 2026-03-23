@@ -145,12 +145,17 @@ def rename_note(note: NoteInfo, new_title: str) -> None:
     except OSError:
         return
 
-    # Replace title in frontmatter
+    # Replace or insert title in frontmatter
     lines = text.split("\n")
+    found = False
     for i, line in enumerate(lines):
         if line.startswith("title:"):
             lines[i] = f"title: {new_title}"
+            found = True
             break
+    if not found and lines and lines[0].strip() == "---":
+        # Insert title after the opening ---
+        lines.insert(1, f"title: {new_title}")
 
     note.path.write_text("\n".join(lines))
     note.title = new_title

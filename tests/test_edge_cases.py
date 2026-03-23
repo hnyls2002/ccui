@@ -124,7 +124,7 @@ class TestConfigFrontmatterEdgeCases:
 
 class TestRenameNoteEdgeCases:
     def test_no_title_line(self, tmp_path):
-        """If file has no 'title:' line, rename should still work or raise."""
+        """If file has no 'title:' line, rename inserts it after opening ---."""
         p = tmp_path / "note.md"
         p.write_text("---\ncreated: 2025-01-01\n---\n\nBody\n")
         note = NoteInfo(
@@ -132,16 +132,8 @@ class TestRenameNoteEdgeCases:
         )
         rename_note(note, "New Name")
         content = p.read_text()
-        # BUG: title is NOT written because there's no "title:" line to replace
-        # The in-memory object is updated but file isn't
-        # This test verifies the bug exists
-        assert note.title == "New Name"  # in-memory updated
-        # Check if file was actually updated
-        has_new_title = "title: New Name" in content
-        # If this assertion fails, the bug is fixed
-        assert (
-            not has_new_title
-        ), "rename_note now handles missing title line — update test"
+        assert note.title == "New Name"
+        assert "title: New Name" in content
 
     def test_rename_missing_file(self, tmp_path):
         """Rename on a deleted file should not crash."""
