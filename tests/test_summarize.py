@@ -18,6 +18,7 @@ from ccui.summarize import (
     _read_note_content,
     _save_note_summaries,
     _save_summaries,
+    count_new_and_update,
     notes_needing_summary,
     sessions_needing_summary,
 )
@@ -115,14 +116,40 @@ class TestNeedsSummary:
 
     def test_has_summary_only(self, tmp_path):
         store = AppStore()
-        store.summaries = {"s1": "a summary"}
+        store.summaries = {"s1": {"summary": "a summary", "message_count": 6}}
         s = _make_session(tmp_path)
         assert _needs_summary(s, store) is True
 
     def test_has_both(self, tmp_path):
         store = AppStore()
+        store.summaries = {"s1": {"summary": "a summary", "message_count": 6}}
+        s = _make_session(tmp_path, custom_title="My Title")
+        assert _needs_summary(s, store) is False
+
+    def test_has_both_legacy_string(self, tmp_path):
+        """Backward compat: old string format still counts as having summary."""
+        store = AppStore()
         store.summaries = {"s1": "a summary"}
         s = _make_session(tmp_path, custom_title="My Title")
+        assert _needs_summary(s, store) is False
+
+    def test_resummary_on_message_drift(self, tmp_path):
+        """Re-summarize when message count drifts beyond threshold."""
+        store = AppStore()
+        store.summaries = {"s1": {"summary": "old summary", "message_count": 6}}
+        s = _make_session(tmp_path, custom_title="My Title")
+        # Default _make_session creates 6 messages, matching stored count
+        assert _needs_summary(s, store) is False
+        # Now simulate session growing significantly (6 -> 20 messages)
+        s.message_count = 20
+        assert _needs_summary(s, store) is True
+
+    def test_no_resummary_on_small_drift(self, tmp_path):
+        """Don't re-summarize for minor message count changes."""
+        store = AppStore()
+        store.summaries = {"s1": {"summary": "summary", "message_count": 10}}
+        s = _make_session(tmp_path, custom_title="My Title")
+        s.message_count = 11  # only 10% drift, below 30% threshold
         assert _needs_summary(s, store) is False
 
 
@@ -135,10 +162,59 @@ class TestSessionsNeedingSummary:
         s1 = _make_session(tmp_path, sid="s1", custom_title="")
         s2 = _make_session(tmp_path, sid="s2", custom_title="Done")
         store.sessions = [s1, s2]
-        store.summaries = {"s2": "summarized"}
+        store.summaries = {"s2": {"summary": "summarized", "message_count": 6}}
         result = sessions_needing_summary(store)
         assert len(result) == 1
         assert result[0].session_id == "s1"
+
+
+# ── count_new_and_update ────────────────────────────────────────────
+
+
+class TestCountNewAndUpdate:
+    def test_all_new(self, tmp_path):
+        store = AppStore()
+        s1 = _make_session(tmp_path, sid="s1", custom_title="")
+        s2 = _make_session(tmp_path, sid="s2", custom_title="")
+        store.sessions = [s1, s2]
+        new, update = count_new_and_update(store)
+        assert new == 2
+        assert update == 0
+
+    def test_all_update(self, tmp_path):
+        store = AppStore()
+        s1 = _make_session(tmp_path, sid="s1", custom_title="Title1")
+        s1.message_count = 20  # drift from stored 6
+        s2 = _make_session(tmp_path, sid="s2", custom_title="Title2")
+        s2.message_count = 20
+        store.sessions = [s1, s2]
+        store.summaries = {
+            "s1": {"summary": "old", "message_count": 6},
+            "s2": {"summary": "old", "message_count": 6},
+        }
+        new, update = count_new_and_update(store)
+        assert new == 0
+        assert update == 2
+
+    def test_mixed(self, tmp_path):
+        store = AppStore()
+        s1 = _make_session(tmp_path, sid="s1", custom_title="")  # new
+        s2 = _make_session(tmp_path, sid="s2", custom_title="Title2")
+        s2.message_count = 20  # update (drift)
+        store.sessions = [s1, s2]
+        store.summaries = {"s2": {"summary": "old", "message_count": 6}}
+        new, update = count_new_and_update(store)
+        assert new == 1
+        assert update == 1
+
+    def test_none_pending(self, tmp_path):
+        store = AppStore()
+        s1 = _make_session(tmp_path, sid="s1", custom_title="Title")
+        store.sessions = [s1]
+        store.summaries = {"s1": {"summary": "done", "message_count": 6}}
+        new, update = count_new_and_update(store)
+        assert new == 0
+        assert update == 0
 
 
 # ── _read_note_content ──────────────────────────────────────────────

@@ -50,6 +50,12 @@ class TestDisplayTitle:
 
     def test_display_summary_present(self):
         store = AppStore()
+        store.summaries = {"s1": {"summary": "a summary", "message_count": 5}}
+        s = _make_session(sid="s1")
+        assert store.display_summary(s) == "a summary"
+
+    def test_display_summary_legacy_string(self):
+        store = AppStore()
         store.summaries = {"s1": "a summary"}
         s = _make_session(sid="s1")
         assert store.display_summary(s) == "a summary"
@@ -116,7 +122,7 @@ class TestVisibleSessions:
 
     def test_search_by_summary(self):
         store = self._setup_store()
-        store.summaries = {"s3": "code cleanup"}
+        store.summaries = {"s3": {"summary": "code cleanup", "message_count": 5}}
         store.search_query = "cleanup"
         result = store.visible_sessions()
         assert len(result) == 1

@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 SUMMARIES_FILE = CLAUDE_DIR / "ccui-summaries.json"
 NOTE_SUMMARIES_FILE = CLAUDE_DIR / "ccui-note-summaries.json"
 SAMPLE_SIZE = 6
+# Re-summarize when message count changes by more than this ratio (e.g. 0.3 = 30%)
+RESUMMARY_RATIO = 0.3
 
 PROMPT_TEMPLATE = """\
 Based on this Claude Code conversation (first {n_head} and last {n_tail} messages shown), generate:
@@ -94,10 +96,21 @@ def _needs_summary(session: SessionInfo, store: AppStore) -> bool:
     """Check if a session needs title/summary generation.
 
     A session is only considered summarized when it has BOTH a title and a summary.
+    Also re-summarize if message count has drifted significantly.
     """
-    has_summary = bool(store.summaries.get(session.session_id))
+    entry = store.summaries.get(session.session_id)
+    has_summary = bool(entry)
     has_title = bool(session.custom_title)
-    return not (has_summary and has_title)
+    if not (has_summary and has_title):
+        return True
+    # Check message count drift
+    if isinstance(entry, dict):
+        old_count = entry.get("message_count", 0)
+        if old_count and session.message_count:
+            drift = abs(session.message_count - old_count) / old_count
+            if drift > RESUMMARY_RATIO:
+                return True
+    return False
 
 
 def _save_summaries(summaries: dict[str, str]) -> None:
@@ -114,9 +127,24 @@ def _append_custom_title(session: SessionInfo, title: str) -> None:
         f.write(entry + "\n")
 
 
+def _is_update(session: SessionInfo, store: AppStore) -> bool:
+    """Return True if session already has a summary but needs re-summarization."""
+    entry = store.summaries.get(session.session_id)
+    has_summary = bool(entry)
+    has_title = bool(session.custom_title)
+    return has_summary and has_title  # has both, so it's a drift-triggered update
+
+
 def sessions_needing_summary(store: AppStore) -> list[SessionInfo]:
     """Return sessions that lack a title or summary."""
     return [s for s in store.sessions if _needs_summary(s, store)]
+
+
+def count_new_and_update(store: AppStore) -> tuple[int, int]:
+    """Return (new_count, update_count) for sessions needing summary."""
+    pending = sessions_needing_summary(store)
+    updates = sum(1 for s in pending if _is_update(s, store))
+    return len(pending) - updates, updates
 
 
 def generate_batch(
@@ -195,7 +223,10 @@ def generate_batch(
             _append_custom_title(session, title)
             session.custom_title = title
 
-        store.summaries[session.session_id] = summary
+        store.summaries[session.session_id] = {
+            "summary": summary,
+            "message_count": session.message_count,
+        }
         _save_summaries(store.summaries)
 
         count += 1

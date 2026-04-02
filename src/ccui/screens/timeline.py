@@ -60,7 +60,7 @@ class TimelineScreen(ItemListScreen):
         self._refreshing = False
 
     def _update_status(self) -> None:
-        from ccui.summarize import sessions_needing_summary
+        from ccui.summarize import count_new_and_update
 
         total = len(self.store.sessions)
         archived = sum(
@@ -69,10 +69,16 @@ class TimelineScreen(ItemListScreen):
         table = self._get_active_table()
         visible = table.row_count if table else 0
         show_a = " | +archived" if self.store.show_archived else ""
-        unsummarized = len(sessions_needing_summary(self.store))
+        new_count, update_count = count_new_and_update(self.store)
+        unsummarized = new_count + update_count
         status = f" [Timeline] {visible}/{total} sessions | {archived} archived{show_a}"
         if unsummarized:
-            status += f" | {unsummarized} unsummarized"
+            parts = []
+            if new_count:
+                parts.append(f"{new_count} new")
+            if update_count:
+                parts.append(f"{update_count} update")
+            status += f" | {'+'.join(parts)} unsummarized"
         if self.store.search_query:
             status += f" | /{self.store.search_query}"
         self.query_one("#status-bar", Static).update(status)
@@ -84,17 +90,29 @@ class TimelineScreen(ItemListScreen):
     # ── Batch summarize ───────────────────────────────────────────────
 
     def _action_summarize_all(self) -> None:
-        from ccui.summarize import sessions_needing_summary
+        from ccui.summarize import count_new_and_update, sessions_needing_summary
 
         pending = sessions_needing_summary(self.store)
         if not pending:
             self.notify("All sessions already have summaries")
             return
+        new_count, update_count = count_new_and_update(self.store)
+        self._summarize_counts = (new_count, update_count)
         self._summarize_cancel.clear()
         bar = self.query_one("#summarize-bar", Static)
         bar.display = True
-        self._update_progress_bar(0, len(pending), "starting...")
+        label = self._summarize_label()
+        self._update_progress_bar(0, len(pending), f"starting... ({label})")
         self.run_worker(self._do_summarize, thread=True)
+
+    def _summarize_label(self) -> str:
+        new_count, update_count = self._summarize_counts
+        parts = []
+        if new_count:
+            parts.append(f"{new_count} new")
+        if update_count:
+            parts.append(f"{update_count} update")
+        return "+".join(parts)
 
     def _do_summarize(self) -> None:
         from ccui.summarize import generate_batch
@@ -117,15 +135,17 @@ class TimelineScreen(ItemListScreen):
         width = 20
         filled = int(width * current / total) if total > 0 else 0
         empty = width - filled
+        label = self._summarize_label()
         # Escape [ ] to avoid Rich markup interpretation
         bar.update(
-            f" Summarize: \\[{'█' * filled}{'░' * empty}] "
+            f" Summarize ({label}): \\[{'█' * filled}{'░' * empty}] "
             f"{current}/{total}  {title}"
         )
 
     def _on_summarize_done(self, count: int) -> None:
         bar = self.query_one("#summarize-bar", Static)
-        bar.update(f" Done! Summarized {count} sessions")
+        label = self._summarize_label()
+        bar.update(f" Done! Summarized {count} sessions ({label})")
         self.set_timer(3.0, self._hide_progress_bar)
         self.store.reload()
         self._refresh_all()

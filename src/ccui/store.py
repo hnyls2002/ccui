@@ -55,7 +55,10 @@ class AppStore:
         return s.custom_title or s.session_id[:8]
 
     def display_summary(self, s: SessionInfo) -> str:
-        return self.summaries.get(s.session_id, "")
+        entry = self.summaries.get(s.session_id, "")
+        if isinstance(entry, dict):
+            return entry.get("summary", "")
+        return entry
 
     def visible_sessions(self, project: str | None = None) -> list[SessionInfo]:
         sessions = self.sessions
