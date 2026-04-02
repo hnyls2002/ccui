@@ -22,6 +22,7 @@ class TimelineScreen(ItemListScreen):
         "H": "_action_toggle_show_archived",
         "x": "_action_export_item",
         "o": "_action_resume_session",
+        "O": "_action_resume_session_dangerous",
         "S": "_action_summarize_all",
     }
 

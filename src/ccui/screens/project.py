@@ -37,6 +37,7 @@ class ProjectScreen(ItemListScreen):
         "e": "_action_edit_external",
         "x": "_action_export_item",
         "o": "_action_resume_session",
+        "O": "_action_resume_session_dangerous",
         "S": "_action_summarize_notes",
         "h": "_action_tab_prev",
         "l": "_action_tab_next",

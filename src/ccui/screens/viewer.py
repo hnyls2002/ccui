@@ -25,6 +25,7 @@ class ContentViewScreen(ModalScreen[None]):
         Binding("q", "back", "Back", priority=True),
         Binding("x", "export", "Export to plan/note", priority=True),
         Binding("o", "resume", "Resume session", priority=True),
+        Binding("O", "resume_dangerous", "Resume (skip perms)", priority=True),
         Binding("j", "scroll_down", "Down", show=False, priority=True),
         Binding("k", "scroll_up", "Up", show=False, priority=True),
         Binding("h", "cursor_left", "Left", show=False, priority=True),
@@ -88,7 +89,7 @@ class ContentViewScreen(ModalScreen[None]):
     def action_back(self) -> None:
         self.dismiss(None)
 
-    def action_resume(self) -> None:
+    def _resume(self, *, dangerous_skip: bool = False) -> None:
         if not self._session:
             self.notify("No session to resume", severity="warning")
             return
@@ -98,12 +99,18 @@ class ContentViewScreen(ModalScreen[None]):
                 f"Directory gone, using {cwd or 'HOME'}",
                 severity="warning",
             )
+        cmd = ["claude", "--resume", self._session.session_id]
+        if dangerous_skip:
+            cmd.append("--dangerously-skip-permissions")
         self.dismiss(None)
         with self.app.suspend():
-            subprocess.call(
-                ["claude", "--resume", self._session.session_id],
-                cwd=cwd,
-            )
+            subprocess.call(cmd, cwd=cwd)
+
+    def action_resume(self) -> None:
+        self._resume()
+
+    def action_resume_dangerous(self) -> None:
+        self._resume(dangerous_skip=True)
 
     def action_export(self) -> None:
         if not self._session or not self._project_path:

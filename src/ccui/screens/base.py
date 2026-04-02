@@ -318,7 +318,7 @@ class ItemListScreen(BaseViewScreen):
             return
         self._open_in_editor(path)
 
-    def _action_resume_session(self) -> None:
+    def _resume_session(self, *, dangerous_skip: bool = False) -> None:
         handler, item = self._get_active_item()
         if not handler or not item:
             return
@@ -330,12 +330,18 @@ class ItemListScreen(BaseViewScreen):
         cwd = resolve_cwd(project_path)
         if project_path and cwd != project_path:
             self.notify(f"Directory gone, using {cwd or 'HOME'}", severity="warning")
+        cmd = ["claude", "--resume", session_id]
+        if dangerous_skip:
+            cmd.append("--dangerously-skip-permissions")
         with self.app.suspend():
-            subprocess.call(
-                ["claude", "--resume", session_id],
-                cwd=cwd,
-            )
+            subprocess.call(cmd, cwd=cwd)
         self._refresh_all()
+
+    def _action_resume_session(self) -> None:
+        self._resume_session()
+
+    def _action_resume_session_dangerous(self) -> None:
+        self._resume_session(dangerous_skip=True)
 
     def _action_export_item(self) -> None:
         handler, item = self._get_active_item()
