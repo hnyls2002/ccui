@@ -18,19 +18,24 @@ def _load_usage() -> dict:
         return {}
 
 
-def _load_tracked_sessions() -> set[str]:
+def _load_tracked_sessions() -> dict[str, int]:
+    """Load tracked sessions: {file_path: last_processed_byte_offset}."""
     try:
-        return set(json.loads(USAGE_SESSIONS_FILE.read_text()))
+        data = json.loads(USAGE_SESSIONS_FILE.read_text())
+        # Migrate from old set format (list of strings) to dict
+        if isinstance(data, list):
+            return {k: 0 for k in data}
+        return data
     except (json.JSONDecodeError, OSError, FileNotFoundError):
-        return set()
+        return {}
 
 
 def _save_usage(data: dict) -> None:
     USAGE_FILE.write_text(json.dumps(data, indent=2, sort_keys=True))
 
 
-def _save_tracked_sessions(ids: set[str]) -> None:
-    USAGE_SESSIONS_FILE.write_text(json.dumps(sorted(ids)))
+def _save_tracked_sessions(tracked: dict[str, int]) -> None:
+    USAGE_SESSIONS_FILE.write_text(json.dumps(tracked, sort_keys=True))
 
 
 def _parse_date(ts: str | int | float) -> str:
@@ -41,11 +46,17 @@ def _parse_date(ts: str | int | float) -> str:
     return datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d")
 
 
-def aggregate_jsonl(jsonl_path: Path, data: dict) -> bool:
-    """Extract token usage from a single JSONL file into data dict. Returns True if any tokens found."""
+def aggregate_jsonl(jsonl_path: Path, data: dict, offset: int = 0) -> tuple[bool, int]:
+    """Extract token usage from a JSONL file starting at byte offset.
+
+    Returns (found_tokens, new_offset).
+    """
     found = False
+    new_offset = offset
     try:
         with open(jsonl_path) as f:
+            if offset:
+                f.seek(offset)
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -74,13 +85,14 @@ def aggregate_jsonl(jsonl_path: Path, data: dict) -> bool:
                 s[3] += usage.get("cache_creation_input_tokens", 0)
                 s[4] += 1
                 found = True
+            new_offset = f.tell()
     except OSError:
         pass
-    return found
+    return found, new_offset
 
 
 def sync_all_sessions() -> None:
-    """Scan all existing session JSONL files, aggregate any not yet tracked."""
+    """Scan all existing session JSONL files, aggregate new/grown ones incrementally."""
     tracked = _load_tracked_sessions()
     data = _load_usage()
     changed = False
@@ -89,12 +101,15 @@ def sync_all_sessions() -> None:
     patterns = ["*/*.jsonl", "*/*/subagents/*.jsonl"]
     for pattern in patterns:
         for jsonl_path in PROJECTS_DIR.glob(pattern):
-            session_key = str(jsonl_path)
-            if session_key in tracked:
+            key = str(jsonl_path)
+            old_offset = tracked.get(key, 0)
+            file_size = jsonl_path.stat().st_size
+            if file_size <= old_offset:
                 continue
-            if aggregate_jsonl(jsonl_path, data):
+            found, new_offset = aggregate_jsonl(jsonl_path, data, old_offset)
+            if found:
                 changed = True
-            tracked.add(session_key)
+            tracked[key] = new_offset
 
     if changed:
         _save_usage(data)
