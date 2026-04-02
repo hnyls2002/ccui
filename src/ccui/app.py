@@ -59,6 +59,24 @@ class CcuiApp(App):
 
 
 def main() -> None:
+    import sys
+
+    args = sys.argv[1:]
+
+    # Subcommand: ccui usage [days]
+    if args and args[0] == "usage":
+        from ccui.usage import print_usage, sync_all_sessions
+
+        sync_all_sessions()
+        days = int(args[1]) if len(args) > 1 else 10
+        print_usage(days)
+        return
+
+    # TUI mode: sync token usage in background before launching
+    from ccui.usage import sync_all_sessions
+
+    sync_all_sessions()
+
     app = CcuiApp()
     app.run()
 
