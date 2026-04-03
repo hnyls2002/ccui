@@ -72,13 +72,16 @@ def main() -> None:
         print_usage(days)
         return
 
-    # Subcommand: ccui summarize <session_id> [--force]
+    # Subcommand: ccui summarize <session_id> [--force] [--full]
     if args and args[0] == "summarize":
         if len(args) < 2:
-            print("Usage: ccui summarize <session_id> [--force]", file=sys.stderr)
+            print(
+                "Usage: ccui summarize <session_id> [--force] [--full]", file=sys.stderr
+            )
             sys.exit(1)
         session_id = args[1]
         force = "--force" in args
+        full = "--full" in args
 
         from ccui.store import AppStore
         from ccui.summarize import summarize_one
@@ -98,7 +101,7 @@ def main() -> None:
             sys.exit(1)
 
         session = matches[0]
-        result = summarize_one(session, store, force=force)
+        result = summarize_one(session, store, force=force, full=full)
         if result:
             title, summary = result
             print(f"{title} — {summary}")

@@ -24,7 +24,7 @@ SAMPLE_SIZE = 6
 RESUMMARY_RATIO = 0.3
 
 PROMPT_TEMPLATE = """\
-Based on this Claude Code conversation (first {n_head} and last {n_tail} messages shown), generate:
+Based on this Claude Code conversation ({context_desc}), generate:
 1. A short title (2-5 words, English, lowercase with hyphens, e.g. 'fix-auth-bug', 'add-metrics')
 2. A one-line summary (max 80 chars, mixed Chinese-English if the conversation is in Chinese). \
 If the conversation shifts topics between the beginning and end, explicitly note the transition \
@@ -36,12 +36,33 @@ Respond in EXACTLY this JSON format, nothing else:
 Conversation:
 {context}"""
 
+# Max chars per message in full mode (prevent blowing up the prompt)
+FULL_MSG_LIMIT = 300
 
-def _extract_context(session: SessionInfo) -> str:
-    """Extract first N and last N messages from a session for summarization."""
+
+def _extract_context(session: SessionInfo, *, full: bool = False) -> tuple[str, str]:
+    """Extract messages from a session for summarization.
+
+    Args:
+        session: The session to extract from.
+        full: If True, include all messages (truncated per-message).
+              If False, use first N and last N messages.
+
+    Returns:
+        (context_text, context_description) tuple.
+    """
     all_msgs = load_session_messages(session.jsonl_path)
     if not all_msgs:
-        return ""
+        return "", ""
+
+    if full:
+        parts: list[str] = []
+        for msg in all_msgs:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            text = msg["text"][:FULL_MSG_LIMIT]
+            parts.append(f"{role}: {text}")
+        desc = f"all {len(all_msgs)} messages shown, truncated"
+        return "\n---\n".join(parts), desc
 
     head = all_msgs[:SAMPLE_SIZE]
     tail = all_msgs[-SAMPLE_SIZE:]
@@ -52,7 +73,10 @@ def _extract_context(session: SessionInfo) -> str:
     else:
         selected = head + [None] + tail  # None as separator marker
 
-    parts: list[str] = []
+    n_head = min(SAMPLE_SIZE, len(all_msgs))
+    n_tail = min(SAMPLE_SIZE, max(0, len(all_msgs) - SAMPLE_SIZE))
+
+    parts = []
     for msg in selected:
         if msg is None:
             parts.append(
@@ -62,20 +86,25 @@ def _extract_context(session: SessionInfo) -> str:
         role = "User" if msg["role"] == "user" else "Assistant"
         text = msg["text"][:500]
         parts.append(f"{role}: {text}")
-    return "\n---\n".join(parts)
+    desc = f"first {n_head} and last {n_tail} messages shown"
+    return "\n---\n".join(parts), desc
 
 
 def _call_claude(prompt: str, cancel: threading.Event | None = None) -> str:
     """Call local Claude Code CLI in print mode and return the response text.
 
+    The prompt is passed via stdin to avoid ARG_MAX limits on long prompts.
     If *cancel* is set while the subprocess is running, kill it immediately.
     """
     proc = subprocess.Popen(
-        ["claude", "-p", "--model", "haiku", "--no-session-persistence", prompt],
+        ["claude", "-p", "--model", "haiku", "--no-session-persistence"],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+    proc.stdin.write(prompt)
+    proc.stdin.close()
     # Poll so we can react to cancel quickly
     while proc.poll() is None:
         if cancel and cancel.is_set():
@@ -152,6 +181,7 @@ def summarize_one(
     store: AppStore,
     *,
     force: bool = False,
+    full: bool = False,
     cancel: threading.Event | None = None,
 ) -> tuple[str, str] | None:
     """Generate title + summary for a single session.
@@ -160,6 +190,7 @@ def summarize_one(
         session: The session to summarize.
         store: AppStore (summaries dict will be mutated and saved).
         force: If True, re-summarize even if already up-to-date.
+        full: If True, use all messages instead of head/tail sampling.
         cancel: If set, abort early.
 
     Returns:
@@ -168,15 +199,11 @@ def summarize_one(
     if not force and not _needs_summary(session, store):
         return None
 
-    context = _extract_context(session)
+    context, context_desc = _extract_context(session, full=full)
     if not context:
         return None
 
-    all_msgs = load_session_messages(session.jsonl_path)
-    n_total = len(all_msgs)
-    n_head = min(SAMPLE_SIZE, n_total)
-    n_tail = min(SAMPLE_SIZE, max(0, n_total - SAMPLE_SIZE))
-    prompt = PROMPT_TEMPLATE.format(context=context, n_head=n_head, n_tail=n_tail)
+    prompt = PROMPT_TEMPLATE.format(context=context, context_desc=context_desc)
 
     try:
         raw = _call_claude(prompt, cancel=cancel)
