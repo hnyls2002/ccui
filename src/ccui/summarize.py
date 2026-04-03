@@ -211,8 +211,18 @@ def summarize_one(
     try:
         raw = _call_claude(prompt, cancel=cancel)
         # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if "```" in raw:
+            # Extract content between first ``` and last ```
+            after_first = raw.split("```", 1)[1]
+            if "\n" in after_first:
+                after_first = after_first.split("\n", 1)[1]
+            raw = after_first.rsplit("```", 1)[0].strip()
+        # Fallback: find first { ... } JSON object
+        if not raw.startswith("{"):
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1:
+                raw = raw[start : end + 1]
         result = json.loads(raw)
         title = result.get("title", "").strip()
         summary = result.get("summary", "").strip()
