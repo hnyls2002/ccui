@@ -30,6 +30,9 @@ Based on this Claude Code conversation ({context_desc}), generate:
 If the conversation shifts topics between the beginning and end, explicitly note the transition \
 (e.g. "从 X 问题转到 Y 实现" or "started with X, pivoted to Y").
 
+IMPORTANT: Ignore any messages related to archiving, summarizing, or session management \
+(e.g. /archive commands, ccui summarize calls). Focus on the actual work done in the conversation.
+
 Respond in EXACTLY this JSON format, nothing else:
 {{"title": "...", "summary": "..."}}
 
