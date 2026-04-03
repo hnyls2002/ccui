@@ -72,6 +72,46 @@ def main() -> None:
         print_usage(days)
         return
 
+    # Subcommand: ccui summarize <session_id> [--force]
+    if args and args[0] == "summarize":
+        if len(args) < 2:
+            print("Usage: ccui summarize <session_id> [--force]", file=sys.stderr)
+            sys.exit(1)
+        session_id = args[1]
+        force = "--force" in args
+
+        from ccui.store import AppStore
+        from ccui.summarize import summarize_one
+
+        store = AppStore()
+        store.reload()
+
+        matches = [s for s in store.sessions if s.session_id.startswith(session_id)]
+        if not matches:
+            print(f"No session found matching '{session_id}'", file=sys.stderr)
+            sys.exit(1)
+        if len(matches) > 1:
+            print(
+                f"Ambiguous: {', '.join(s.session_id[:8] for s in matches)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        session = matches[0]
+        result = summarize_one(session, store, force=force)
+        if result:
+            title, summary = result
+            print(f"{title} — {summary}")
+        else:
+            title = store.display_title(session)
+            summary = store.display_summary(session)
+            if summary:
+                print(f"{title} — {summary}")
+            else:
+                print("No summary generated", file=sys.stderr)
+                sys.exit(1)
+        return
+
     # TUI mode: sync token usage in background before launching
     from ccui.usage import sync_all_sessions
 

@@ -147,6 +147,71 @@ def count_new_and_update(store: AppStore) -> tuple[int, int]:
     return len(pending) - updates, updates
 
 
+def summarize_one(
+    session: SessionInfo,
+    store: AppStore,
+    *,
+    force: bool = False,
+    cancel: threading.Event | None = None,
+) -> tuple[str, str] | None:
+    """Generate title + summary for a single session.
+
+    Args:
+        session: The session to summarize.
+        store: AppStore (summaries dict will be mutated and saved).
+        force: If True, re-summarize even if already up-to-date.
+        cancel: If set, abort early.
+
+    Returns:
+        (title, summary) on success, None on failure or skip.
+    """
+    if not force and not _needs_summary(session, store):
+        return None
+
+    context = _extract_context(session)
+    if not context:
+        return None
+
+    all_msgs = load_session_messages(session.jsonl_path)
+    n_total = len(all_msgs)
+    n_head = min(SAMPLE_SIZE, n_total)
+    n_tail = min(SAMPLE_SIZE, max(0, n_total - SAMPLE_SIZE))
+    prompt = PROMPT_TEMPLATE.format(context=context, n_head=n_head, n_tail=n_tail)
+
+    try:
+        raw = _call_claude(prompt, cancel=cancel)
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = json.loads(raw)
+        title = result.get("title", "").strip()
+        summary = result.get("summary", "").strip()
+    except Exception:
+        logger.warning("Failed to summarize session %s", session.session_id[:8])
+        return None
+
+    if not title or not summary:
+        logger.warning(
+            "Incomplete response for %s (title=%r, summary=%r), will retry",
+            session.session_id[:8],
+            bool(title),
+            bool(summary),
+        )
+        return None
+
+    if not session.custom_title or force:
+        _append_custom_title(session, title)
+        session.custom_title = title
+
+    store.summaries[session.session_id] = {
+        "summary": summary,
+        "message_count": session.message_count,
+    }
+    _save_summaries(store.summaries)
+
+    return title, summary
+
+
 def generate_batch(
     store: AppStore,
     on_progress: Callable[[int, int, str], None] | None = None,
@@ -180,55 +245,13 @@ def generate_batch(
         if cancel and cancel.is_set():
             break
 
-        context = _extract_context(session)
-        if not context:
+        result = summarize_one(session, store, cancel=cancel)
+        if result is None:
             if on_progress:
                 on_progress(i + 1, len(pending), "(skipped)")
             continue
 
-        all_msgs = load_session_messages(session.jsonl_path)
-        n_total = len(all_msgs)
-        n_head = min(SAMPLE_SIZE, n_total)
-        n_tail = min(SAMPLE_SIZE, max(0, n_total - SAMPLE_SIZE))
-        prompt = PROMPT_TEMPLATE.format(context=context, n_head=n_head, n_tail=n_tail)
-
-        try:
-            raw = _call_claude(prompt, cancel=cancel)
-            # Strip markdown code fences if present
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            result = json.loads(raw)
-            title = result.get("title", "").strip()
-            summary = result.get("summary", "").strip()
-        except Exception:
-            logger.warning("Failed to summarize session %s", session.session_id[:8])
-            if on_progress:
-                on_progress(i + 1, len(pending), "(error)")
-            continue
-
-        # Both title and summary must be present; skip if either is missing
-        # so the session will be retried next time.
-        if not title or not summary:
-            logger.warning(
-                "Incomplete response for %s (title=%r, summary=%r), will retry",
-                session.session_id[:8],
-                bool(title),
-                bool(summary),
-            )
-            if on_progress:
-                on_progress(i + 1, len(pending), "(incomplete)")
-            continue
-
-        if not session.custom_title:
-            _append_custom_title(session, title)
-            session.custom_title = title
-
-        store.summaries[session.session_id] = {
-            "summary": summary,
-            "message_count": session.message_count,
-        }
-        _save_summaries(store.summaries)
-
+        title, _summary = result
         count += 1
         if on_progress:
             on_progress(i + 1, len(pending), title)
