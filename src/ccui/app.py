@@ -87,11 +87,12 @@ def main() -> None:
             i += 1
 
         if watch:
+            import os
             import time
 
             try:
                 while True:
-                    print("\033[2J\033[H", end="")  # clear screen
+                    os.system("clear")
                     sync_all_sessions()
                     print_usage(days, show_extra=show_extra)
                     print(f"\n  Refreshing every {interval}s — Ctrl+C to stop")

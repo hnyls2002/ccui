@@ -211,28 +211,31 @@ def fetch_quota() -> dict | None:
         return None
 
 
-def _print_quota_bar(
-    label: str, pct: float, resets_at: str | None, width: int = 30
-) -> None:
+def _format_reset(resets_at: str | None) -> str:
+    if not resets_at:
+        return ""
+    from datetime import datetime, timezone
+
+    try:
+        dt = datetime.fromisoformat(resets_at)
+        delta = dt - datetime.now(timezone.utc)
+        hours = int(delta.total_seconds() // 3600)
+        mins = int((delta.total_seconds() % 3600) // 60)
+        return f"{hours}h{mins:02d}m" if hours > 0 else f"{mins}m"
+    except (ValueError, TypeError):
+        return ""
+
+
+BOX_INNER = 51  # fixed inner width for quota box
+
+
+def _quota_row(label: str, pct: float, resets_at: str | None, width: int = 20) -> str:
     filled = int(pct / 100 * width)
     bar = "█" * filled + "░" * (width - filled)
-    reset_str = ""
-    if resets_at:
-        from datetime import datetime, timezone
-
-        try:
-            dt = datetime.fromisoformat(resets_at)
-            now = datetime.now(timezone.utc)
-            delta = dt - now
-            hours = int(delta.total_seconds() // 3600)
-            mins = int((delta.total_seconds() % 3600) // 60)
-            if hours > 0:
-                reset_str = f"  resets in {hours}h{mins:02d}m"
-            else:
-                reset_str = f"  resets in {mins}m"
-        except (ValueError, TypeError):
-            pass
-    print(f"  {label:<16s} {bar} {pct:5.1f}%{reset_str}")
+    reset = _format_reset(resets_at)
+    reset_part = f"~ {reset}" if reset else ""
+    content = f"{label:<12s} {bar} {pct:5.1f}%  {reset_part}"
+    return f"  │  {content:<{BOX_INNER}s}│"
 
 
 def print_quota(show_extra: bool = False) -> None:
@@ -242,6 +245,7 @@ def print_quota(show_extra: bool = False) -> None:
         print("  (quota unavailable)")
         return
 
+    rows = []
     for key, label in [
         ("five_hour", "5h window"),
         ("seven_day", "7d window"),
@@ -249,7 +253,7 @@ def print_quota(show_extra: bool = False) -> None:
     ]:
         entry = quota.get(key)
         if entry and entry.get("utilization") is not None:
-            _print_quota_bar(label, entry["utilization"], entry.get("resets_at"))
+            rows.append(_quota_row(label, entry["utilization"], entry.get("resets_at")))
 
     if show_extra:
         extra = quota.get("extra_usage")
@@ -257,7 +261,16 @@ def print_quota(show_extra: bool = False) -> None:
             used = extra.get("used_credits", 0)
             limit = extra.get("monthly_limit", 0)
             pct = extra.get("utilization", 0)
-            _print_quota_bar(f"extra (${used:.0f}/${limit})", pct, None)
+            rows.append(_quota_row(f"extra ${_fmt(used)}", pct, None))
+
+    if not rows:
+        return
+
+    bw = BOX_INNER + 2  # +2 for "  " padding inside │
+    print(f"  ╭{'─ Quota ':─<{bw}}╮")
+    for r in rows:
+        print(r)
+    print(f"  ╰{'─' * bw}╯")
 
 
 def print_usage(days: int = 10, show_extra: bool = False) -> None:
