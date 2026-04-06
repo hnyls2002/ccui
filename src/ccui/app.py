@@ -63,13 +63,41 @@ def main() -> None:
 
     args = sys.argv[1:]
 
-    # Subcommand: ccui usage [days]
+    # Subcommand: ccui usage [days] [-w/--watch [interval]]
     if args and args[0] == "usage":
         from ccui.usage import print_usage, sync_all_sessions
 
-        sync_all_sessions()
-        days = int(args[1]) if len(args) > 1 else 10
-        print_usage(days)
+        rest = args[1:]
+        days = 10
+        watch = False
+        interval = 3
+        i = 0
+        while i < len(rest):
+            if rest[i] in ("-w", "--watch"):
+                watch = True
+                # optional interval argument
+                if i + 1 < len(rest) and rest[i + 1].isdigit():
+                    interval = int(rest[i + 1])
+                    i += 1
+            elif rest[i].isdigit():
+                days = int(rest[i])
+            i += 1
+
+        if watch:
+            import time
+
+            try:
+                while True:
+                    print("\033[2J\033[H", end="")  # clear screen
+                    sync_all_sessions()
+                    print_usage(days)
+                    print(f"\n  Refreshing every {interval}s — Ctrl+C to stop")
+                    time.sleep(interval)
+            except KeyboardInterrupt:
+                pass
+        else:
+            sync_all_sessions()
+            print_usage(days)
         return
 
     # Subcommand: ccui summarize <session_id> [--force] [--full]
