@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from ccui.constants import CLAUDE_DIR, PROJECTS_DIR
 
@@ -238,11 +239,15 @@ def _quota_row(label: str, pct: float, resets_at: str | None, width: int = 20) -
     return f"  │  {content:<{BOX_INNER}s}│"
 
 
-def print_quota(show_extra: bool = False) -> None:
+def print_quota(show_extra: bool = False, file: Any = None) -> None:
     """Print subscription quota section."""
+    from functools import partial
+
+    p = partial(print, file=file)
+
     quota = fetch_quota()
     if not quota:
-        print("  (quota unavailable)")
+        p("  (quota unavailable)")
         return
 
     rows = []
@@ -267,20 +272,24 @@ def print_quota(show_extra: bool = False) -> None:
         return
 
     bw = BOX_INNER + 2  # +2 for "  " padding inside │
-    print(f"  ╭{'─ Quota ':─<{bw}}╮")
+    p(f"  ╭{'─ Quota ':─<{bw}}╮")
     for r in rows:
-        print(r)
-    print(f"  ╰{'─' * bw}╯")
+        p(r)
+    p(f"  ╰{'─' * bw}╯")
 
 
-def print_usage(days: int = 10, show_extra: bool = False) -> None:
-    """Print daily token usage stats to stdout."""
-    print_quota(show_extra=show_extra)
-    print()
+def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> None:
+    """Print daily token usage stats."""
+    from functools import partial
+
+    p = partial(print, file=file)
+
+    print_quota(show_extra=show_extra, file=file)
+    p()
 
     data = _load_usage()
     if not data:
-        print("No token usage data found.")
+        p("No token usage data found.")
         return
 
     dates = sorted(data.keys())[-days:]
@@ -297,8 +306,8 @@ def print_usage(days: int = 10, show_extra: bool = False) -> None:
     max_cost = max(r[3] for r in rows) if rows else 1
 
     # Header
-    print("  Date       Msgs   Output      Cost   ")
-    print("  ─────────  ─────  ──────  ─────────  " + "─" * 20)
+    p("  Date       Msgs   Output      Cost   ")
+    p("  ─────────  ─────  ──────  ─────────  " + "─" * 20)
 
     grand_msgs = 0
     grand_output = 0
@@ -309,9 +318,7 @@ def print_usage(days: int = 10, show_extra: bool = False) -> None:
         grand_output += output
         grand_cost += cost
         bar = _bar(cost, max_cost)
-        print("  %s  %5d  %6s  $%7.2f  %s" % (date, msgs, _fmt(output), cost, bar))
+        p("  %s  %5d  %6s  $%7.2f  %s" % (date, msgs, _fmt(output), cost, bar))
 
-    print("  ─────────  ─────  ──────  ─────────  " + "─" * 20)
-    print(
-        "  TOTAL      %5d  %6s  $%7.2f" % (grand_msgs, _fmt(grand_output), grand_cost)
-    )
+    p("  ─────────  ─────  ──────  ─────────  " + "─" * 20)
+    p("  TOTAL      %5d  %6s  $%7.2f" % (grand_msgs, _fmt(grand_output), grand_cost))

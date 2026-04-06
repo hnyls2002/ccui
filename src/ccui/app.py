@@ -87,18 +87,26 @@ def main() -> None:
             i += 1
 
         if watch:
+            import io
             import os
+            import sys
             import time
 
+            os.system("clear")  # clean slate on first frame
+            print("\033[?25l", end="", flush=True)  # hide cursor
             try:
                 while True:
-                    os.system("clear")
+                    buf = io.StringIO()
                     sync_all_sessions()
-                    print_usage(days, show_extra=show_extra)
-                    print(f"\n  Refreshing every {interval}s — Ctrl+C to stop")
+                    print_usage(days, show_extra=show_extra, file=buf)
+                    buf.write(f"\n  Refreshing every {interval}s — Ctrl+C to stop\n")
+                    sys.stdout.write(f"\033[H{buf.getvalue()}\033[J")
+                    sys.stdout.flush()
                     time.sleep(interval)
             except KeyboardInterrupt:
                 pass
+            finally:
+                print("\033[?25h", end="", flush=True)  # restore cursor
         else:
             sync_all_sessions()
             print_usage(days, show_extra=show_extra)
