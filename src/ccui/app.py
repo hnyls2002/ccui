@@ -70,6 +70,7 @@ def main() -> None:
         rest = args[1:]
         days = 10
         watch = False
+        show_extra = False
         interval = 3
         i = 0
         while i < len(rest):
@@ -79,6 +80,8 @@ def main() -> None:
                 if i + 1 < len(rest) and rest[i + 1].isdigit():
                     interval = int(rest[i + 1])
                     i += 1
+            elif rest[i] == "--extra":
+                show_extra = True
             elif rest[i].isdigit():
                 days = int(rest[i])
             i += 1
@@ -90,14 +93,14 @@ def main() -> None:
                 while True:
                     print("\033[2J\033[H", end="")  # clear screen
                     sync_all_sessions()
-                    print_usage(days)
+                    print_usage(days, show_extra=show_extra)
                     print(f"\n  Refreshing every {interval}s — Ctrl+C to stop")
                     time.sleep(interval)
             except KeyboardInterrupt:
                 pass
         else:
             sync_all_sessions()
-            print_usage(days)
+            print_usage(days, show_extra=show_extra)
         return
 
     # Subcommand: ccui summarize <session_id> [--force] [--full]

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from ccui.constants import CLAUDE_DIR, PROJECTS_DIR
 
 USAGE_FILE = CLAUDE_DIR / "token-usage.json"
 USAGE_SESSIONS_FILE = CLAUDE_DIR / "token-usage-sessions.json"
+QUOTA_CACHE_FILE = CLAUDE_DIR / "quota-cache.json"
+QUOTA_CACHE_TTL = 60  # seconds
 
 
 def _load_usage() -> dict:
@@ -141,8 +144,127 @@ def _bar(value: float, max_value: float, width: int = 20) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def print_usage(days: int = 10) -> None:
+def _get_oauth_token() -> str | None:
+    """Extract OAuth access token from macOS Keychain."""
+    try:
+        raw = subprocess.check_output(
+            [
+                "security",
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return json.loads(raw).get("claudeAiOauth", {}).get("accessToken")
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def _load_quota_cache() -> dict | None:
+    """Load cached quota if still fresh (within TTL)."""
+    import time
+
+    try:
+        cache = json.loads(QUOTA_CACHE_FILE.read_text())
+        if time.time() - cache.get("ts", 0) < QUOTA_CACHE_TTL:
+            return cache.get("data")
+    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        pass
+    return None
+
+
+def _save_quota_cache(data: dict) -> None:
+    import time
+
+    QUOTA_CACHE_FILE.write_text(json.dumps({"ts": time.time(), "data": data}))
+
+
+def fetch_quota() -> dict | None:
+    """Fetch subscription quota, with 60s disk cache."""
+    cached = _load_quota_cache()
+    if cached is not None:
+        return cached
+
+    import urllib.error
+    import urllib.request
+
+    token = _get_oauth_token()
+    if not token:
+        return None
+    req = urllib.request.Request(
+        "https://api.anthropic.com/api/oauth/usage",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            _save_quota_cache(data)
+            return data
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
+        return None
+
+
+def _print_quota_bar(
+    label: str, pct: float, resets_at: str | None, width: int = 30
+) -> None:
+    filled = int(pct / 100 * width)
+    bar = "█" * filled + "░" * (width - filled)
+    reset_str = ""
+    if resets_at:
+        from datetime import datetime, timezone
+
+        try:
+            dt = datetime.fromisoformat(resets_at)
+            now = datetime.now(timezone.utc)
+            delta = dt - now
+            hours = int(delta.total_seconds() // 3600)
+            mins = int((delta.total_seconds() % 3600) // 60)
+            if hours > 0:
+                reset_str = f"  resets in {hours}h{mins:02d}m"
+            else:
+                reset_str = f"  resets in {mins}m"
+        except (ValueError, TypeError):
+            pass
+    print(f"  {label:<16s} {bar} {pct:5.1f}%{reset_str}")
+
+
+def print_quota(show_extra: bool = False) -> None:
+    """Print subscription quota section."""
+    quota = fetch_quota()
+    if not quota:
+        print("  (quota unavailable)")
+        return
+
+    for key, label in [
+        ("five_hour", "5h window"),
+        ("seven_day", "7d window"),
+        ("seven_day_sonnet", "7d sonnet"),
+    ]:
+        entry = quota.get(key)
+        if entry and entry.get("utilization") is not None:
+            _print_quota_bar(label, entry["utilization"], entry.get("resets_at"))
+
+    if show_extra:
+        extra = quota.get("extra_usage")
+        if extra and extra.get("is_enabled"):
+            used = extra.get("used_credits", 0)
+            limit = extra.get("monthly_limit", 0)
+            pct = extra.get("utilization", 0)
+            _print_quota_bar(f"extra (${used:.0f}/${limit})", pct, None)
+
+
+def print_usage(days: int = 10, show_extra: bool = False) -> None:
     """Print daily token usage stats to stdout."""
+    print_quota(show_extra=show_extra)
+    print()
+
     data = _load_usage()
     if not data:
         print("No token usage data found.")
