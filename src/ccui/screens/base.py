@@ -285,7 +285,22 @@ class ItemListScreen(BaseViewScreen):
             return
         msg = handler.toggle_archive(item, self.store)
         if msg:
-            self._refresh_all()
+            table = self._get_active_table()
+            session_id = getattr(item, "session_id", "")
+            is_archived = session_id in self.store.archived_ids
+
+            if is_archived and not self.store.show_archived and table:
+                # Archived and hidden → remove the single row
+                row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+                table.remove_row(row_key)
+                self._update_preview()
+            elif table and table.row_count > 0:
+                # Still visible → flip the archive indicator (first column)
+                row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+                first_col = next(iter(table.columns))
+                table.update_cell(row_key, first_col, "[A]" if is_archived else "")
+
+            self._update_status()
             self.notify(msg)
 
     def _action_toggle_show_archived(self) -> None:
@@ -300,11 +315,21 @@ class ItemListScreen(BaseViewScreen):
         if not info:
             return
         dialog_title, current, apply_fn = info
+        table = self._get_active_table()
+        row_key = None
+        if table and table.row_count > 0:
+            row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
 
         def on_name(name: str | None) -> None:
             if name:
                 apply_fn(name)
-                self._refresh_all()
+                if row_key is not None and table and table.row_count > 0:
+                    first_col = next(iter(table.columns))
+                    table.update_cell(row_key, first_col, name)
+                    self._update_preview()
+                    self._update_status()
+                else:
+                    self._refresh_all()
 
         self.app.push_screen(
             InputDialog(dialog_title, default=current), callback=on_name
@@ -385,9 +410,19 @@ class ItemListScreen(BaseViewScreen):
         return getattr(item, "project_path", "")
 
     def _confirm_and_delete(self, message: str, delete_fn: object) -> None:
+        table = self._get_active_table()
+        row_key = None
+        if table and table.row_count > 0:
+            row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+
         def on_confirm(confirmed: bool) -> None:
             if confirmed and delete_fn():
-                self._refresh_all()
+                if row_key is not None and table:
+                    table.remove_row(row_key)
+                    self._update_preview()
+                    self._update_status()
+                else:
+                    self._refresh_all()
                 self.notify("Deleted")
 
         self.app.push_screen(ConfirmDialog(message), callback=on_confirm)
