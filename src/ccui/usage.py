@@ -278,7 +278,7 @@ def print_quota(show_extra: bool = False, file: Any = None) -> None:
             pct = extra.get("utilization")
             if pct is None:
                 pct = (used / limit * 100) if limit > 0 else 0.0
-            rows.append(_quota_row(f"extra ${_fmt(used)}", pct, None))
+            rows.append(_quota_row(f"extra ${used:.0f}", pct, None))
 
     if not rows:
         return
