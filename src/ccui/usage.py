@@ -11,7 +11,6 @@ from ccui.constants import CLAUDE_DIR, PROJECTS_DIR
 
 USAGE_FILE = CLAUDE_DIR / "token-usage.json"
 USAGE_SESSIONS_FILE = CLAUDE_DIR / "token-usage-sessions.json"
-QUOTA_CACHE_FILE = CLAUDE_DIR / "quota-cache.json"
 QUOTA_CACHE_TTL = 60  # seconds
 
 
@@ -164,12 +163,23 @@ def _get_oauth_token() -> str | None:
         return None
 
 
+def _quota_cache_file() -> Path:
+    """Return account-specific cache file path based on current token hash."""
+    import hashlib
+
+    token = _get_oauth_token()
+    if not token:
+        return CLAUDE_DIR / "quota-cache.json"
+    h = hashlib.sha256(token.encode()).hexdigest()[:8]
+    return CLAUDE_DIR / f"quota-cache-{h}.json"
+
+
 def _load_quota_cache() -> dict | None:
     """Load cached quota if still fresh (within TTL)."""
     import time
 
     try:
-        cache = json.loads(QUOTA_CACHE_FILE.read_text())
+        cache = json.loads(_quota_cache_file().read_text())
         if time.time() - cache.get("ts", 0) < QUOTA_CACHE_TTL:
             return cache.get("data")
     except (json.JSONDecodeError, OSError, FileNotFoundError):
@@ -180,7 +190,7 @@ def _load_quota_cache() -> dict | None:
 def _save_quota_cache(data: dict) -> None:
     import time
 
-    QUOTA_CACHE_FILE.write_text(json.dumps({"ts": time.time(), "data": data}))
+    _quota_cache_file().write_text(json.dumps({"ts": time.time(), "data": data}))
 
 
 def fetch_quota() -> dict | None:
