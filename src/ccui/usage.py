@@ -263,9 +263,11 @@ def print_quota(show_extra: bool = False, file: Any = None) -> None:
     if show_extra:
         extra = quota.get("extra_usage")
         if extra and extra.get("is_enabled"):
-            used = extra.get("used_credits", 0)
-            limit = extra.get("monthly_limit", 0)
-            pct = extra.get("utilization", 0)
+            used = extra.get("used_credits") or 0
+            limit = extra.get("monthly_limit") or 0
+            pct = extra.get("utilization")
+            if pct is None:
+                pct = (used / limit * 100) if limit > 0 else 0.0
             rows.append(_quota_row(f"extra ${_fmt(used)}", pct, None))
 
     if not rows:

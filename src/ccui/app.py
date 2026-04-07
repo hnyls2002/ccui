@@ -80,7 +80,7 @@ def main() -> None:
                 if i + 1 < len(rest) and rest[i + 1].isdigit():
                     interval = int(rest[i + 1])
                     i += 1
-            elif rest[i] == "--extra":
+            elif rest[i] in ("-e", "--extra"):
                 show_extra = True
             elif rest[i].isdigit():
                 days = int(rest[i])
