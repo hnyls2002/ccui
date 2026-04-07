@@ -273,8 +273,8 @@ def print_quota(show_extra: bool = False, file: Any = None) -> None:
     if show_extra:
         extra = quota.get("extra_usage")
         if extra and extra.get("is_enabled"):
-            used = extra.get("used_credits") or 0
-            limit = extra.get("monthly_limit") or 0
+            used = (extra.get("used_credits") or 0) / 100  # cents → dollars
+            limit = (extra.get("monthly_limit") or 0) / 100
             pct = extra.get("utilization")
             if pct is None:
                 pct = (used / limit * 100) if limit > 0 else 0.0
