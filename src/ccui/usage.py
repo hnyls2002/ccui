@@ -310,27 +310,58 @@ def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> N
     rows = []
     for date in dates:
         models = data[date]
+        inp = sum(v[0] for v in models.values())
+        cached = sum(v[2] for v in models.values())
         output = sum(v[1] for v in models.values())
         msgs = sum(v[4] for v in models.values())
         cost = sum(_cost_for_model(m, s) for m, s in models.items())
-        rows.append((date, msgs, output, cost))
+        rows.append((date, msgs, inp, cached, output, cost))
 
-    max_cost = max(r[3] for r in rows) if rows else 1
+    max_cost = max(r[5] for r in rows) if rows else 1
 
-    # Header
-    p("  Date       Msgs   Output      Cost   ")
-    p("  ─────────  ─────  ──────  ─────────  " + "─" * 20)
+    from tabulate import tabulate
 
-    grand_msgs = 0
-    grand_output = 0
+    table_rows = []
+    grand_msgs = grand_input = grand_cached = grand_output = 0
     grand_cost = 0.0
 
-    for date, msgs, output, cost in rows:
+    for date, msgs, inp, cached, output, cost in rows:
         grand_msgs += msgs
+        grand_input += inp
+        grand_cached += cached
         grand_output += output
         grand_cost += cost
         bar = _bar(cost, max_cost)
-        p("  %s  %5d  %6s  $%7.2f  %s" % (date, msgs, _fmt(output), cost, bar))
+        table_rows.append(
+            [date, msgs, _fmt(inp), _fmt(cached), _fmt(output), f"${cost:.2f}", bar]
+        )
 
-    p("  ─────────  ─────  ──────  ─────────  " + "─" * 20)
-    p("  TOTAL      %5d  %6s  $%7.2f" % (grand_msgs, _fmt(grand_output), grand_cost))
+    table_rows.append([""] * 7)  # separator
+    table_rows.append(
+        [
+            "TOTAL",
+            grand_msgs,
+            _fmt(grand_input),
+            _fmt(grand_cached),
+            _fmt(grand_output),
+            f"${grand_cost:.2f}",
+            "",
+        ]
+    )
+
+    headers = ["Date", "Msgs", "Input", "Cached", "Output", "Cost", ""]
+    table = tabulate(
+        table_rows,
+        headers=headers,
+        colalign=(
+            "left",
+            "right",
+            "right",
+            "right",
+            "right",
+            "right",
+            "left",
+        ),
+    )
+    for line in table.splitlines():
+        p(f"  {line}")

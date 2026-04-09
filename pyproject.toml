@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
     "textual>=0.40",
+    "tabulate>=0.9",
 ]
 
 [project.scripts]
