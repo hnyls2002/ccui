@@ -14,7 +14,7 @@ def _load() -> set[str]:
     try:
         data = json.loads(ARCHIVE_FILE.read_text())
         if isinstance(data, list):
-            return set(data)
+            return {x for x in data if isinstance(x, str)}
     except (json.JSONDecodeError, OSError):
         pass
     return set()
