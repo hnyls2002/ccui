@@ -15,6 +15,13 @@ if TYPE_CHECKING:
     from ccui.store import AppStore
 
 
+TITLE_MAX_WIDTH = 60
+
+
+def _truncate(text: str, limit: int = TITLE_MAX_WIDTH) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
 class _BaseSessionsTab(TabHandler):
     """Shared logic for session-based tabs."""
 
@@ -114,7 +121,7 @@ class TimelineTab(_BaseSessionsTab):
             table.add_row(
                 archived,
                 s.project_name,
-                store.display_title(s),
+                _truncate(store.display_title(s)),
                 str(s.message_count),
                 s.date_str,
                 key=s.session_id,
@@ -140,7 +147,7 @@ class SessionsTab(_BaseSessionsTab):
             archived = "[A]" if s.session_id in store.archived_ids else ""
             table.add_row(
                 archived,
-                store.display_title(s),
+                _truncate(store.display_title(s)),
                 str(s.message_count),
                 s.date_str,
                 key=s.session_id,
