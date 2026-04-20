@@ -371,8 +371,20 @@ def print_hourly(data: dict, file: Any = None) -> None:
         return
 
     bar_w = 2
+    height = 6
+    bars = _render_vertical_bars(costs, height=height, width=bar_w)
+
+    max_cost = max(costs)
+    ymax_str = f"${max_cost:.2f}" if max_cost < 10 else f"${max_cost:.0f}"
+    ymin_str = "$0"
+    yw = max(len(ymax_str), len(ymin_str))
+
+    bar_line_width = 24 * bar_w
+    inner = yw + 3 + bar_line_width + 1  # "{ylabel:>yw} │ {bars}" + trailing space
+    bw = inner + 2
+
     now_local = now_utc.astimezone()
-    label_chars = [" "] * (24 * bar_w)
+    label_chars = [" "] * bar_line_width
     for col in (0, 6, 12, 18):
         t_local = now_local - timedelta(hours=23 - col)
         hh = t_local.strftime("%H")
@@ -381,12 +393,17 @@ def print_hourly(data: dict, file: Any = None) -> None:
         label_chars[pos + 1] = hh[1]
     label_line = "".join(label_chars)
 
-    bw = BOX_INNER + 2
+    ylabels = [""] * len(bars)
+    ylabels[0] = ymax_str
+    ylabels[-1] = ymin_str
+
     title = f"─ Past 24h (${total:.2f} total, local time) "
     p(f"  ╭{title:─<{bw}}╮")
-    for line in _render_vertical_bars(costs, height=6, width=bar_w):
-        p(f"  │  {line.center(BOX_INNER):<{BOX_INNER}s}│")
-    p(f"  │  {label_line.center(BOX_INNER):<{BOX_INNER}s}│")
+    for ylabel, line in zip(ylabels, bars):
+        content = f"{ylabel:>{yw}} │ {line}"
+        p(f"  │  {content:<{inner}s}│")
+    xaxis = f"{'':>{yw}} │ {label_line}"
+    p(f"  │  {xaxis:<{inner}s}│")
     p(f"  ╰{'─' * bw}╯")
 
 
