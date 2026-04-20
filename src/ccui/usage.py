@@ -387,11 +387,11 @@ def print_hourly(data: dict, file: Any = None) -> None:
         for i, ch in enumerate(ymax_str):
             top[i] = ch
         for i in range(len(ymax_str) + 1, bar_left):
-            top[i] = "▔"
+            top[i] = "▔" if i % 2 == 0 else " "
     else:
         label_start = bar_line_width - len(ymax_str)
         for i in range(bar_right, label_start - 1):
-            top[i] = "▔"
+            top[i] = "▔" if i % 2 == 0 else " "
         for i, ch in enumerate(ymax_str):
             top[label_start + i] = ch
     bars[0] = "".join(top)
