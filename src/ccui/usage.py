@@ -378,22 +378,18 @@ def print_hourly(data: dict, file: Any = None) -> None:
     max_cost = max(costs)
     ymax_str = f"${max_cost:.2f}" if max_cost < 10 else f"${max_cost:.0f}"
 
-    # Dashed guide line at the tallest bar's height, sharing the top row
+    # Place the peak price next to the tallest bar in bars[0]
     max_idx = costs.index(max_cost)
     bar_left = max_idx * bar_w
     bar_right = bar_left + bar_w
     top = list(bars[0])
-    if len(ymax_str) + 2 <= bar_left:
+    if len(ymax_str) + 1 <= bar_left:
+        pos = bar_left - 1 - len(ymax_str)
         for i, ch in enumerate(ymax_str):
-            top[i] = ch
-        for i in range(len(ymax_str) + 1, bar_left):
-            top[i] = "▔" if i % 2 == 0 else " "
-    else:
-        label_start = bar_line_width - len(ymax_str)
-        for i in range(bar_right, label_start - 1):
-            top[i] = "▔" if i % 2 == 0 else " "
+            top[pos + i] = ch
+    elif bar_right + 1 + len(ymax_str) <= bar_line_width:
         for i, ch in enumerate(ymax_str):
-            top[label_start + i] = ch
+            top[bar_right + 1 + i] = ch
     bars[0] = "".join(top)
 
     now_local = now_utc.astimezone()
