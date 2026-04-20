@@ -406,14 +406,13 @@ def print_hourly(data: dict, file: Any = None) -> None:
         label_chars[pos + 1] = hh[1]
     label_line = "".join(label_chars)
 
-    inner = bar_line_width + 1  # trailing space
-    bw = inner + 2
+    bw = BOX_INNER + 2
 
     title = f"─ Past 24h (${total:.2f} total, local time) "
     p(f"  ╭{title:─<{bw}}╮")
     for line in bars:
-        p(f"  │  {line:<{inner}s}│")
-    p(f"  │  {label_line:<{inner}s}│")
+        p(f"  │  {line.center(BOX_INNER)}│")
+    p(f"  │  {label_line.center(BOX_INNER)}│")
     p(f"  ╰{'─' * bw}╯")
 
 
