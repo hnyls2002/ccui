@@ -341,6 +341,8 @@ def _render_vertical_bars(values: list[float], height: int = 6) -> list[str]:
                 frac = h - row
                 idx = min(int(frac * 8), 7)
                 chars.append(blocks[idx])
+            elif row == 0:
+                chars.append("▁")
             else:
                 chars.append(" ")
         lines.append("".join(chars))
