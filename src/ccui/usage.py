@@ -41,12 +41,24 @@ def _save_tracked_sessions(tracked: dict[str, int]) -> None:
     USAGE_SESSIONS_FILE.write_text(json.dumps(tracked, sort_keys=True))
 
 
-def _parse_date(ts: str | int | float) -> str:
+def _parse_date_hour(ts: str | int | float) -> tuple[str, str]:
+    """Return (YYYY-MM-DD, HH) for a timestamp, in UTC."""
     if isinstance(ts, str):
-        return ts[:10]
-    from datetime import datetime
+        return ts[:10], ts[11:13]
+    from datetime import datetime, timezone
 
-    return datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d")
+    dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+    return dt.strftime("%Y-%m-%d"), dt.strftime("%H")
+
+
+def _is_old_format(data: dict) -> bool:
+    """Detect pre-hour schema: data[date][model] = list instead of data[date][hour][model] = list."""
+    for entries in data.values():
+        if not isinstance(entries, dict):
+            return True
+        for v in entries.values():
+            return isinstance(v, list)
+    return False
 
 
 def aggregate_jsonl(jsonl_path: Path, data: dict, offset: int = 0) -> tuple[bool, int]:
@@ -75,13 +87,15 @@ def aggregate_jsonl(jsonl_path: Path, data: dict, offset: int = 0) -> tuple[bool
                 ts = obj.get("timestamp")
                 if not ts:
                     continue
-                date = _parse_date(ts)
+                date, hour = _parse_date_hour(ts)
 
                 if date not in data:
                     data[date] = {}
-                if model not in data[date]:
-                    data[date][model] = [0, 0, 0, 0, 0]
-                s = data[date][model]
+                if hour not in data[date]:
+                    data[date][hour] = {}
+                if model not in data[date][hour]:
+                    data[date][hour][model] = [0, 0, 0, 0, 0]
+                s = data[date][hour][model]
                 s[0] += usage.get("input_tokens", 0)
                 s[1] += usage.get("output_tokens", 0)
                 s[2] += usage.get("cache_read_input_tokens", 0)
@@ -96,9 +110,13 @@ def aggregate_jsonl(jsonl_path: Path, data: dict, offset: int = 0) -> tuple[bool
 
 def sync_all_sessions() -> None:
     """Scan all existing session JSONL files, aggregate new/grown ones incrementally."""
-    tracked = _load_tracked_sessions()
     data = _load_usage()
-    changed = False
+    migrated = _is_old_format(data)
+    if migrated:
+        data = {}
+        _save_tracked_sessions({})  # reset offsets to re-scan everything
+    tracked = _load_tracked_sessions()
+    changed = migrated
 
     # Find all JSONL files (main sessions + subagents)
     patterns = ["*/*.jsonl", "*/*/subagents/*.jsonl"]
@@ -290,6 +308,81 @@ def print_quota(show_extra: bool = False, file: Any = None) -> None:
     p(f"  ╰{'─' * bw}╯")
 
 
+def _day_stats(day: dict) -> tuple[int, int, int, int, float]:
+    """Aggregate one day's {hour: {model: [i,o,cr,cw,msgs]}} into (inp, cached, output, msgs, cost)."""
+    inp = cached = output = msgs = 0
+    cost = 0.0
+    for hour_data in day.values():
+        for model, s in hour_data.items():
+            inp += s[0]
+            output += s[1]
+            cached += s[2]
+            msgs += s[4]
+            cost += _cost_for_model(model, s)
+    return inp, cached, output, msgs, cost
+
+
+def _render_vertical_bars(values: list[float], height: int = 6) -> list[str]:
+    """Render values as a height-row vertical bar chart, one char per value."""
+    if not values:
+        return []
+    max_val = max(values)
+    if max_val <= 0:
+        return [" " * len(values) for _ in range(height)]
+    blocks = "▁▂▃▄▅▆▇█"
+    lines = []
+    for row in range(height - 1, -1, -1):
+        chars = []
+        for v in values:
+            h = v / max_val * height
+            if h >= row + 1:
+                chars.append("█")
+            elif h > row:
+                frac = h - row
+                idx = min(int(frac * 8), 7)
+                chars.append(blocks[idx])
+            else:
+                chars.append(" ")
+        lines.append("".join(chars))
+    return lines
+
+
+def print_hourly(data: dict, file: Any = None) -> None:
+    """Print past-24h hourly cost as a vertical bar chart."""
+    from datetime import datetime, timedelta, timezone
+    from functools import partial
+
+    p = partial(print, file=file)
+
+    now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    costs = []
+    for i in range(23, -1, -1):
+        t = now_utc - timedelta(hours=i)
+        bucket = data.get(t.strftime("%Y-%m-%d"), {}).get(t.strftime("%H"), {})
+        costs.append(sum(_cost_for_model(m, s) for m, s in bucket.items()))
+
+    total = sum(costs)
+    if total <= 0:
+        return
+
+    now_local = now_utc.astimezone()
+    label_chars = [" "] * 24
+    for col in (0, 6, 12, 18):
+        t_local = now_local - timedelta(hours=23 - col)
+        hh = t_local.strftime("%H")
+        label_chars[col] = hh[0]
+        label_chars[col + 1] = hh[1]
+    label_line = "".join(label_chars)
+
+    bw = BOX_INNER + 2
+    title = f"─ Past 24h (${total:.2f} total, local time) "
+    p(f"  ╭{title:─<{bw}}╮")
+    for line in _render_vertical_bars(costs, height=6):
+        p(f"  │  {line.center(BOX_INNER):<{BOX_INNER}s}│")
+    p(f"  │  {label_line.center(BOX_INNER):<{BOX_INNER}s}│")
+    p(f"  ╰{'─' * bw}╯")
+
+
 def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> None:
     """Print daily token usage stats."""
     from functools import partial
@@ -309,12 +402,7 @@ def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> N
     # Pre-compute per-day stats
     rows = []
     for date in dates:
-        models = data[date]
-        inp = sum(v[0] for v in models.values())
-        cached = sum(v[2] for v in models.values())
-        output = sum(v[1] for v in models.values())
-        msgs = sum(v[4] for v in models.values())
-        cost = sum(_cost_for_model(m, s) for m, s in models.items())
+        inp, cached, output, msgs, cost = _day_stats(data[date])
         rows.append((date, msgs, inp, cached, output, cost))
 
     max_cost = max(r[5] for r in rows) if rows else 1
@@ -365,3 +453,6 @@ def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> N
     )
     for line in table.splitlines():
         p(f"  {line}")
+
+    p()
+    print_hourly(data, file=file)
