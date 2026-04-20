@@ -322,13 +322,15 @@ def _day_stats(day: dict) -> tuple[int, int, int, int, float]:
     return inp, cached, output, msgs, cost
 
 
-def _render_vertical_bars(values: list[float], height: int = 6) -> list[str]:
-    """Render values as a height-row vertical bar chart, one char per value."""
+def _render_vertical_bars(
+    values: list[float], height: int = 6, width: int = 2
+) -> list[str]:
+    """Render values as a height-row vertical bar chart, `width` chars per value."""
     if not values:
         return []
     max_val = max(values)
     if max_val <= 0:
-        return [" " * len(values) for _ in range(height)]
+        return [" " * (len(values) * width) for _ in range(height)]
     blocks = "▁▂▃▄▅▆▇█"
     lines = []
     for row in range(height - 1, -1, -1):
@@ -336,15 +338,16 @@ def _render_vertical_bars(values: list[float], height: int = 6) -> list[str]:
         for v in values:
             h = v / max_val * height
             if h >= row + 1:
-                chars.append("█")
+                ch = "█"
             elif h > row:
                 frac = h - row
                 idx = min(int(frac * 8), 7)
-                chars.append(blocks[idx])
+                ch = blocks[idx]
             elif row == 0:
-                chars.append("▁")
+                ch = "▁"
             else:
-                chars.append(" ")
+                ch = " "
+            chars.append(ch * width)
         lines.append("".join(chars))
     return lines
 
@@ -367,19 +370,21 @@ def print_hourly(data: dict, file: Any = None) -> None:
     if total <= 0:
         return
 
+    bar_w = 2
     now_local = now_utc.astimezone()
-    label_chars = [" "] * 24
+    label_chars = [" "] * (24 * bar_w)
     for col in (0, 6, 12, 18):
         t_local = now_local - timedelta(hours=23 - col)
         hh = t_local.strftime("%H")
-        label_chars[col] = hh[0]
-        label_chars[col + 1] = hh[1]
+        pos = col * bar_w
+        label_chars[pos] = hh[0]
+        label_chars[pos + 1] = hh[1]
     label_line = "".join(label_chars)
 
     bw = BOX_INNER + 2
     title = f"─ Past 24h (${total:.2f} total, local time) "
     p(f"  ╭{title:─<{bw}}╮")
-    for line in _render_vertical_bars(costs, height=6):
+    for line in _render_vertical_bars(costs, height=6, width=bar_w):
         p(f"  │  {line.center(BOX_INNER):<{BOX_INNER}s}│")
     p(f"  │  {label_line.center(BOX_INNER):<{BOX_INNER}s}│")
     p(f"  ╰{'─' * bw}╯")
