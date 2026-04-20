@@ -373,15 +373,29 @@ def print_hourly(data: dict, file: Any = None) -> None:
     bar_w = 2
     height = 6
     bars = _render_vertical_bars(costs, height=height, width=bar_w)
+    bar_line_width = 24 * bar_w
 
     max_cost = max(costs)
     ymax_str = f"${max_cost:.2f}" if max_cost < 10 else f"${max_cost:.0f}"
-    ymin_str = "$0"
-    yw = max(len(ymax_str), len(ymin_str))
 
-    bar_line_width = 24 * bar_w
-    inner = yw + 3 + bar_line_width + 1  # "{ylabel:>yw} │ {bars}" + trailing space
-    bw = inner + 2
+    # Annotation line pointing at the tallest bar
+    max_idx = costs.index(max_cost)
+    ptr = max_idx * bar_w + bar_w // 2  # column of the pointer elbow
+    annot = [" "] * bar_line_width
+    if len(ymax_str) + 2 <= ptr:
+        for i, ch in enumerate(ymax_str):
+            annot[i] = ch
+        for i in range(len(ymax_str) + 1, ptr):
+            annot[i] = "─"
+        annot[ptr] = "┐"
+    else:
+        annot[ptr] = "┌"
+        label_start = bar_line_width - len(ymax_str)
+        for i in range(ptr + 1, label_start - 1):
+            annot[i] = "─"
+        for i, ch in enumerate(ymax_str):
+            annot[label_start + i] = ch
+    annotation_line = "".join(annot)
 
     now_local = now_utc.astimezone()
     label_chars = [" "] * bar_line_width
@@ -393,17 +407,15 @@ def print_hourly(data: dict, file: Any = None) -> None:
         label_chars[pos + 1] = hh[1]
     label_line = "".join(label_chars)
 
-    ylabels = [""] * len(bars)
-    ylabels[0] = ymax_str
-    ylabels[-1] = ymin_str
+    inner = bar_line_width + 1  # trailing space
+    bw = inner + 2
 
     title = f"─ Past 24h (${total:.2f} total, local time) "
     p(f"  ╭{title:─<{bw}}╮")
-    for ylabel, line in zip(ylabels, bars):
-        content = f"{ylabel:>{yw}} │ {line}"
-        p(f"  │  {content:<{inner}s}│")
-    xaxis = f"{'':>{yw}} │ {label_line}"
-    p(f"  │  {xaxis:<{inner}s}│")
+    p(f"  │  {annotation_line:<{inner}s}│")
+    for line in bars:
+        p(f"  │  {line:<{inner}s}│")
+    p(f"  │  {label_line:<{inner}s}│")
     p(f"  ╰{'─' * bw}╯")
 
 
