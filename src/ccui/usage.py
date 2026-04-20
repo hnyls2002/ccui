@@ -378,21 +378,20 @@ def print_hourly(data: dict, file: Any = None) -> None:
     max_cost = max(costs)
     ymax_str = f"${max_cost:.2f}" if max_cost < 10 else f"${max_cost:.0f}"
 
-    # Annotation line pointing at the tallest bar
+    # Dashed guide line capping the tallest bar
     max_idx = costs.index(max_cost)
-    ptr = max_idx * bar_w + bar_w // 2  # column of the pointer elbow
+    bar_left = max_idx * bar_w
+    bar_right = bar_left + bar_w
     annot = [" "] * bar_line_width
-    if len(ymax_str) + 2 <= ptr:
+    if len(ymax_str) + 2 <= bar_left:
         for i, ch in enumerate(ymax_str):
             annot[i] = ch
-        for i in range(len(ymax_str) + 1, ptr):
-            annot[i] = "─"
-        annot[ptr] = "┐"
+        for i in range(len(ymax_str) + 1, bar_right):
+            annot[i] = "┈"
     else:
-        annot[ptr] = "┌"
         label_start = bar_line_width - len(ymax_str)
-        for i in range(ptr + 1, label_start - 1):
-            annot[i] = "─"
+        for i in range(bar_left, label_start - 1):
+            annot[i] = "┈"
         for i, ch in enumerate(ymax_str):
             annot[label_start + i] = ch
     annotation_line = "".join(annot)
