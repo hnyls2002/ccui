@@ -378,23 +378,23 @@ def print_hourly(data: dict, file: Any = None) -> None:
     max_cost = max(costs)
     ymax_str = f"${max_cost:.2f}" if max_cost < 10 else f"${max_cost:.0f}"
 
-    # Dashed guide line capping the tallest bar
+    # Dashed guide line at the tallest bar's height, sharing the top row
     max_idx = costs.index(max_cost)
     bar_left = max_idx * bar_w
     bar_right = bar_left + bar_w
-    annot = [" "] * bar_line_width
+    top = list(bars[0])
     if len(ymax_str) + 2 <= bar_left:
         for i, ch in enumerate(ymax_str):
-            annot[i] = ch
-        for i in range(len(ymax_str) + 1, bar_right):
-            annot[i] = "┈"
+            top[i] = ch
+        for i in range(len(ymax_str) + 1, bar_left):
+            top[i] = "┈"
     else:
         label_start = bar_line_width - len(ymax_str)
-        for i in range(bar_left, label_start - 1):
-            annot[i] = "┈"
+        for i in range(bar_right, label_start - 1):
+            top[i] = "┈"
         for i, ch in enumerate(ymax_str):
-            annot[label_start + i] = ch
-    annotation_line = "".join(annot)
+            top[label_start + i] = ch
+    bars[0] = "".join(top)
 
     now_local = now_utc.astimezone()
     label_chars = [" "] * bar_line_width
@@ -411,7 +411,6 @@ def print_hourly(data: dict, file: Any = None) -> None:
 
     title = f"─ Past 24h (${total:.2f} total, local time) "
     p(f"  ╭{title:─<{bw}}╮")
-    p(f"  │  {annotation_line:<{inner}s}│")
     for line in bars:
         p(f"  │  {line:<{inner}s}│")
     p(f"  │  {label_line:<{inner}s}│")
