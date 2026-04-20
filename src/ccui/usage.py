@@ -430,6 +430,9 @@ def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> N
         p("No token usage data found.")
         return
 
+    print_hourly(data, file=file)
+    p()
+
     dates = sorted(data.keys())[-days:]
 
     # Pre-compute per-day stats
@@ -486,6 +489,3 @@ def print_usage(days: int = 10, show_extra: bool = False, file: Any = None) -> N
     )
     for line in table.splitlines():
         p(f"  {line}")
-
-    p()
-    print_hourly(data, file=file)
