@@ -378,19 +378,16 @@ def print_hourly(data: dict, file: Any = None) -> None:
     max_cost = max(costs)
     ymax_str = f"${max_cost:.2f}" if max_cost < 10 else f"${max_cost:.0f}"
 
-    # Place the peak price next to the tallest bar in bars[0]
+    # Price label lives on its own row, centered above the tallest bar
     max_idx = costs.index(max_cost)
-    bar_left = max_idx * bar_w
-    bar_right = bar_left + bar_w
-    top = list(bars[0])
-    if len(ymax_str) + 1 <= bar_left:
-        pos = bar_left - 1 - len(ymax_str)
-        for i, ch in enumerate(ymax_str):
-            top[pos + i] = ch
-    elif bar_right + 1 + len(ymax_str) <= bar_line_width:
-        for i, ch in enumerate(ymax_str):
-            top[bar_right + 1 + i] = ch
-    bars[0] = "".join(top)
+    bar_center = max_idx * bar_w + bar_w // 2
+    label_pos = max(
+        0, min(bar_center - len(ymax_str) // 2, bar_line_width - len(ymax_str))
+    )
+    label_row = [" "] * bar_line_width
+    for i, ch in enumerate(ymax_str):
+        label_row[label_pos + i] = ch
+    label_row_str = "".join(label_row)
 
     now_local = now_utc.astimezone()
     label_chars = [" "] * bar_line_width
@@ -406,6 +403,7 @@ def print_hourly(data: dict, file: Any = None) -> None:
 
     title = f"─ Past 24h (${total:.2f} total, local time) "
     p(f"  ╭{title:─<{bw}}╮")
+    p(f"  │  {label_row_str.center(BOX_INNER)}│")
     for line in bars:
         p(f"  │  {line.center(BOX_INNER)}│")
     p(f"  │  {label_line.center(BOX_INNER)}│")
