@@ -117,7 +117,7 @@ class TimelineTab(_BaseSessionsTab):
         self._items = store.visible_sessions()
         table.clear()
         for s in self._items:
-            archived = "[A]" if s.session_id in store.archived_ids else ""
+            archived = "archived" if s.session_id in store.archived_ids else ""
             table.add_row(
                 archived,
                 s.project_name,
@@ -144,7 +144,7 @@ class SessionsTab(_BaseSessionsTab):
         self._items = store.visible_sessions(project)
         table.clear()
         for s in self._items:
-            archived = "[A]" if s.session_id in store.archived_ids else ""
+            archived = "archived" if s.session_id in store.archived_ids else ""
             table.add_row(
                 archived,
                 _truncate(store.display_title(s)),

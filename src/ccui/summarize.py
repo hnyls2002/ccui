@@ -42,6 +42,23 @@ Conversation:
 # Max chars per message in full mode (prevent blowing up the prompt)
 FULL_MSG_LIMIT = 300
 
+# Auto-dispatch thresholds (chosen by message_count): sessions below
+# AUTO_FULL_MSGS use head/tail sampling with haiku; sessions above use the
+# full conversation. Past AUTO_STRONG_MSGS we also bump to sonnet because
+# haiku tends to recycle stale titles on dense long contexts.
+AUTO_FULL_MSGS = 30
+AUTO_STRONG_MSGS = 150
+
+
+def _auto_dispatch(session: SessionInfo) -> tuple[bool, str]:
+    """Pick (full_context, model) based on session size."""
+    n = session.message_count or 0
+    if n < AUTO_FULL_MSGS:
+        return False, "haiku"
+    if n < AUTO_STRONG_MSGS:
+        return True, "haiku"
+    return True, "sonnet"
+
 
 def _extract_context(session: SessionInfo, *, full: bool = False) -> tuple[str, str]:
     """Extract messages from a session for summarization.
@@ -93,14 +110,19 @@ def _extract_context(session: SessionInfo, *, full: bool = False) -> tuple[str, 
     return "\n---\n".join(parts), desc
 
 
-def _call_claude(prompt: str, cancel: threading.Event | None = None) -> str:
+def _call_claude(
+    prompt: str,
+    *,
+    model: str = "haiku",
+    cancel: threading.Event | None = None,
+) -> str:
     """Call local Claude Code CLI in print mode and return the response text.
 
     The prompt is passed via stdin to avoid ARG_MAX limits on long prompts.
     If *cancel* is set while the subprocess is running, kill it immediately.
     """
     proc = subprocess.Popen(
-        ["claude", "-p", "--model", "haiku", "--no-session-persistence"],
+        ["claude", "-p", "--model", model, "--no-session-persistence"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -184,7 +206,8 @@ def summarize_one(
     store: AppStore,
     *,
     force: bool = False,
-    full: bool = False,
+    full: bool | None = None,
+    model: str | None = None,
     cancel: threading.Event | None = None,
 ) -> tuple[str, str] | None:
     """Generate title + summary for a single session.
@@ -193,7 +216,8 @@ def summarize_one(
         session: The session to summarize.
         store: AppStore (summaries dict will be mutated and saved).
         force: If True, re-summarize even if already up-to-date.
-        full: If True, use all messages instead of head/tail sampling.
+        full: Override full-context flag. If None, auto-dispatch by size.
+        model: Override model. If None, auto-dispatch by size.
         cancel: If set, abort early.
 
     Returns:
@@ -202,14 +226,18 @@ def summarize_one(
     if not force and not _needs_summary(session, store):
         return None
 
-    context, context_desc = _extract_context(session, full=full)
+    auto_full, auto_model = _auto_dispatch(session)
+    use_full = auto_full if full is None else full
+    use_model = auto_model if model is None else model
+
+    context, context_desc = _extract_context(session, full=use_full)
     if not context:
         return None
 
     prompt = PROMPT_TEMPLATE.format(context=context, context_desc=context_desc)
 
     try:
-        raw = _call_claude(prompt, cancel=cancel)
+        raw = _call_claude(prompt, model=use_model, cancel=cancel)
         # Strip markdown code fences if present
         if "```" in raw:
             # Extract content between first ``` and last ```

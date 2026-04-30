@@ -112,16 +112,27 @@ def main() -> None:
             print_usage(days, show_extra=show_extra)
         return
 
-    # Subcommand: ccui summarize <session_id> [--force] [--full]
+    # Subcommand: ccui summarize <session_id> [--force] [--full] [--model NAME]
     if args and args[0] == "summarize":
         if len(args) < 2:
             print(
-                "Usage: ccui summarize <session_id> [--force] [--full]", file=sys.stderr
+                "Usage: ccui summarize <session_id> [--force] [--full] [--model NAME]",
+                file=sys.stderr,
             )
             sys.exit(1)
         session_id = args[1]
         force = "--force" in args
-        full = "--full" in args
+        full: bool | None = True if "--full" in args else None
+        model: str | None = None
+        if "--model" in args:
+            idx = args.index("--model")
+            if idx + 1 >= len(args):
+                print(
+                    "--model requires a value (e.g. haiku, sonnet, opus)",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            model = args[idx + 1]
 
         from ccui.store import AppStore
         from ccui.summarize import summarize_one
@@ -141,7 +152,7 @@ def main() -> None:
             sys.exit(1)
 
         session = matches[0]
-        result = summarize_one(session, store, force=force, full=full)
+        result = summarize_one(session, store, force=force, full=full, model=model)
         if result:
             title, summary = result
             print(f"{title} — {summary}")
