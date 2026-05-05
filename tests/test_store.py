@@ -177,28 +177,62 @@ class TestProjectNames:
 
 
 class TestLoadSummaries:
+    def _patch_both(self, summaries_file, archive_file):
+        # _load_summaries merges from both SUMMARIES_FILE (legacy) and ARCHIVE_FILE (new)
+        return (
+            patch("ccui.store.SUMMARIES_FILE", summaries_file),
+            patch("ccui.store.ARCHIVE_FILE", archive_file),
+        )
+
     def test_loads_valid(self, tmp_path):
         f = tmp_path / "summaries.json"
+        a = tmp_path / "archives.json"  # nonexistent; archive merge is a no-op
         f.write_text(json.dumps({"s1": "summary one", "s2": "summary two"}))
-        with patch("ccui.store.SUMMARIES_FILE", f):
+        p1, p2 = self._patch_both(f, a)
+        with p1, p2:
             result = _load_summaries()
             assert result == {"s1": "summary one", "s2": "summary two"}
 
     def test_missing_file(self, tmp_path):
-        with patch("ccui.store.SUMMARIES_FILE", tmp_path / "nope.json"):
+        p1, p2 = self._patch_both(tmp_path / "nope.json", tmp_path / "noarch.json")
+        with p1, p2:
             assert _load_summaries() == {}
 
     def test_corrupt_json(self, tmp_path):
         f = tmp_path / "bad.json"
+        a = tmp_path / "noarch.json"
         f.write_text("not json")
-        with patch("ccui.store.SUMMARIES_FILE", f):
+        p1, p2 = self._patch_both(f, a)
+        with p1, p2:
             assert _load_summaries() == {}
 
     def test_non_dict_json(self, tmp_path):
         f = tmp_path / "list.json"
+        a = tmp_path / "noarch.json"
         f.write_text(json.dumps(["a", "b"]))
-        with patch("ccui.store.SUMMARIES_FILE", f):
+        p1, p2 = self._patch_both(f, a)
+        with p1, p2:
             assert _load_summaries() == {}
+
+    def test_merges_archive_format(self, tmp_path):
+        # New /archive skill writes summaries inside session-archives.json (dict form)
+        f = tmp_path / "summaries.json"  # nonexistent
+        a = tmp_path / "archives.json"
+        a.write_text(json.dumps({"s1": {"summary": "from-archive"}}))
+        p1, p2 = self._patch_both(f, a)
+        with p1, p2:
+            result = _load_summaries()
+            assert result == {"s1": {"summary": "from-archive"}}
+
+    def test_archive_format_overrides_legacy(self, tmp_path):
+        f = tmp_path / "summaries.json"
+        a = tmp_path / "archives.json"
+        f.write_text(json.dumps({"s1": "legacy"}))
+        a.write_text(json.dumps({"s1": {"summary": "new"}}))
+        p1, p2 = self._patch_both(f, a)
+        with p1, p2:
+            result = _load_summaries()
+            assert result == {"s1": {"summary": "new"}}
 
 
 class TestLoadNoteSummaries:

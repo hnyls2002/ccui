@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ccui.archive import get_archived_ids
+from ccui.archive import ARCHIVE_FILE, get_archived_ids
 from ccui.constants import CLAUDE_DIR
 from ccui.data import SessionInfo, get_project_names, load_all_sessions
 
@@ -13,13 +13,29 @@ NOTE_SUMMARIES_FILE = CLAUDE_DIR / "ccui-note-summaries.json"
 
 
 def _load_summaries() -> dict[str, str]:
+    """Merge legacy ccui-summaries.json with new session-archives.json (dict form).
+
+    New entries (written by the /archive skill) live in session-archives.json
+    as `{"<sid>": {"summary": "..."}}`. Old entries still live in
+    ccui-summaries.json. The merged result lets ccui display summaries from
+    both sources; new format wins on key collision.
+    """
+    merged: dict = {}
     try:
         data = json.loads(SUMMARIES_FILE.read_text())
         if isinstance(data, dict):
-            return data
+            merged.update(data)
     except (OSError, json.JSONDecodeError):
         pass
-    return {}
+    try:
+        data = json.loads(ARCHIVE_FILE.read_text())
+        if isinstance(data, dict):
+            for sid, entry in data.items():
+                if isinstance(entry, dict) and entry.get("summary"):
+                    merged[sid] = entry
+    except (OSError, json.JSONDecodeError):
+        pass
+    return merged
 
 
 def _load_note_summaries() -> dict[str, str]:

@@ -45,9 +45,18 @@ class TestArchive:
             assert archive.get_archived_ids() == set()
 
     def test_wrong_json_type(self, tmp_path):
+        # array (legacy) and dict (new format) are both valid; anything else returns empty
         with self._patch_file(tmp_path):
-            (tmp_path / "archives.json").write_text(json.dumps({"key": "val"}))
+            (tmp_path / "archives.json").write_text(json.dumps("not-a-container"))
             assert archive.get_archived_ids() == set()
+
+    def test_load_dict_format(self, tmp_path):
+        # New format: {"<sid>": {"summary": "..."}}; keys are the archived SIDs
+        with self._patch_file(tmp_path):
+            (tmp_path / "archives.json").write_text(
+                json.dumps({"s1": {"summary": "x"}, "s2": {"summary": "y"}})
+            )
+            assert archive.get_archived_ids() == {"s1", "s2"}
 
     def test_save_format(self, tmp_path):
         with self._patch_file(tmp_path):
