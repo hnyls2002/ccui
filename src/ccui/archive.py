@@ -8,22 +8,31 @@ from pathlib import Path
 ARCHIVE_FILE = Path.home() / ".claude" / "session-archives.json"
 
 
-def _load() -> set[str]:
+def _load_dict() -> dict:
+    """Load raw archive dict. Auto-migrates legacy array-of-SID format to dict."""
     if not ARCHIVE_FILE.exists():
-        return set()
+        return {}
     try:
         data = json.loads(ARCHIVE_FILE.read_text())
-        if isinstance(data, list):
-            return {x for x in data if isinstance(x, str)}
         if isinstance(data, dict):
-            return {k for k in data if isinstance(k, str)}
+            return data
+        if isinstance(data, list):
+            return {x: {} for x in data if isinstance(x, str)}
     except (json.JSONDecodeError, OSError):
         pass
-    return set()
+    return {}
+
+
+def _load() -> set[str]:
+    return {k for k in _load_dict() if isinstance(k, str)}
 
 
 def _save(archived: set[str]) -> None:
-    ARCHIVE_FILE.write_text(json.dumps(sorted(archived), indent=2) + "\n")
+    """Save archived set as dict. Preserves existing per-SID metadata (e.g. summary)
+    for SIDs that remain archived; adds new SIDs as empty entries `{}`."""
+    existing = _load_dict()
+    new = {sid: existing.get(sid, {}) for sid in archived}
+    ARCHIVE_FILE.write_text(json.dumps(new, indent=2, sort_keys=True) + "\n")
 
 
 def is_archived(session_id: str) -> bool:
