@@ -222,8 +222,8 @@ class TestExtractContextBoundary:
         """At exactly 2*SAMPLE_SIZE, all messages should be included."""
         n = SAMPLE_SIZE * 2
         session = _make_session_with_msgs(tmp_path, n)
-        ctx = _extract_context(session)
-        assert "omitted" not in ctx
+        ctx, desc = _extract_context(session)
+        assert "omitted" not in ctx and "omitted" not in desc
         # All messages should be present
         for i in range(n):
             assert f"msg-{i}" in ctx
@@ -236,8 +236,8 @@ class TestExtractContextBoundary:
         """
         n = SAMPLE_SIZE * 2 + 1
         session = _make_session_with_msgs(tmp_path, n)
-        ctx = _extract_context(session)
-        assert "omitted" in ctx
+        ctx, desc = _extract_context(session)
+        assert "omitted" in ctx or "omitted" in desc
         # The first and last SAMPLE_SIZE messages should be present
         for i in range(SAMPLE_SIZE):
             assert f"msg-{i}" in ctx, f"msg-{i} missing from head"
@@ -251,11 +251,12 @@ class TestExtractContextBoundary:
         """At 2*SAMPLE_SIZE + 2, two messages are dropped."""
         n = SAMPLE_SIZE * 2 + 2
         session = _make_session_with_msgs(tmp_path, n)
-        ctx = _extract_context(session)
-        assert "omitted" in ctx
+        ctx, desc = _extract_context(session)
+        assert "omitted" in ctx or "omitted" in desc
         # Verify omitted count is correct
         expected_omitted = n - SAMPLE_SIZE * 2
-        assert f"{expected_omitted} messages omitted" in ctx
+        haystack = ctx + "\n" + desc
+        assert f"{expected_omitted} messages omitted" in haystack
 
 
 # ═══════════════════════════════════════════════════════════════════════

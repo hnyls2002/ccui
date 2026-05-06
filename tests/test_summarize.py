@@ -67,7 +67,7 @@ class TestExtractContext:
                 {"type": "assistant", "message": {"content": "hi"}},
             ],
         )
-        ctx = _extract_context(session)
+        ctx, _desc = _extract_context(session)
         assert "hello" in ctx
         assert "hi" in ctx
         assert "omitted" not in ctx
@@ -77,14 +77,15 @@ class TestExtractContext:
         for i in range(SAMPLE_SIZE * 3):
             msgs.append({"type": "user", "message": {"content": f"msg-{i}"}})
         session = _make_session(tmp_path, messages=msgs)
-        ctx = _extract_context(session)
-        assert "omitted" in ctx
+        ctx, desc = _extract_context(session)
+        # "omitted" lives in the description string, not the context body
+        assert "omitted" in ctx or "omitted" in desc
         assert "msg-0" in ctx  # head
         assert f"msg-{SAMPLE_SIZE * 3 - 1}" in ctx  # tail
 
     def test_empty_session(self, tmp_path):
         session = _make_session(tmp_path, messages=[])
-        assert _extract_context(session) == ""
+        assert _extract_context(session) == ("", "")
 
     def test_truncates_long_messages(self, tmp_path):
         long_text = "x" * 1000
@@ -95,7 +96,7 @@ class TestExtractContext:
                 {"type": "assistant", "message": {"content": "ok"}},
             ],
         )
-        ctx = _extract_context(session)
+        ctx, _desc = _extract_context(session)
         # Each message truncated to 500 chars
         assert len(ctx) < len(long_text)
 
