@@ -147,10 +147,12 @@ def _fmt(n: int | float) -> str:
 
 def _cost_for_model(model: str, s: list) -> float:
     """Calculate API-equivalent cost for a model's token counts."""
+    if "fable" in model:
+        return (s[0] * 10 + s[1] * 50 + s[2] * 1.0 + s[3] * 12.5) / 1e6
     if "opus" in model:
-        return (s[0] * 15 + s[1] * 75 + s[2] * 1.5 + s[3] * 18.75) / 1e6
+        return (s[0] * 5 + s[1] * 25 + s[2] * 0.5 + s[3] * 6.25) / 1e6
     if "haiku" in model:
-        return (s[0] * 0.8 + s[1] * 4 + s[2] * 0.08 + s[3] * 1.0) / 1e6
+        return (s[0] * 1 + s[1] * 5 + s[2] * 0.1 + s[3] * 1.25) / 1e6
     return (s[0] * 3 + s[1] * 15 + s[2] * 0.3 + s[3] * 3.75) / 1e6
 
 
