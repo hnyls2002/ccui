@@ -63,55 +63,6 @@ def main() -> None:
 
     args = sys.argv[1:]
 
-    # Subcommand: ccui usage [days] [-w/--watch [interval]]
-    if args and args[0] == "usage":
-        from ccui.usage import print_usage, sync_all_sessions
-
-        rest = args[1:]
-        days = 10
-        watch = False
-        show_extra = False
-        interval = 3
-        i = 0
-        while i < len(rest):
-            if rest[i] in ("-w", "--watch"):
-                watch = True
-                # optional interval argument
-                if i + 1 < len(rest) and rest[i + 1].isdigit():
-                    interval = int(rest[i + 1])
-                    i += 1
-            elif rest[i] in ("-e", "--extra"):
-                show_extra = True
-            elif rest[i].isdigit():
-                days = int(rest[i])
-            i += 1
-
-        if watch:
-            import io
-            import os
-            import sys
-            import time
-
-            os.system("clear")  # clean slate on first frame
-            print("\033[?25l", end="", flush=True)  # hide cursor
-            try:
-                while True:
-                    buf = io.StringIO()
-                    sync_all_sessions()
-                    print_usage(days, show_extra=show_extra, file=buf)
-                    buf.write(f"\n  Refreshing every {interval}s — Ctrl+C to stop\n")
-                    sys.stdout.write(f"\033[H{buf.getvalue()}\033[J")
-                    sys.stdout.flush()
-                    time.sleep(interval)
-            except KeyboardInterrupt:
-                pass
-            finally:
-                print("\033[?25h", end="", flush=True)  # restore cursor
-        else:
-            sync_all_sessions()
-            print_usage(days, show_extra=show_extra)
-        return
-
     # Subcommand: ccui summarize <session_id> [--force] [--full] [--model NAME]
     if args and args[0] == "summarize":
         if len(args) < 2:
@@ -165,11 +116,6 @@ def main() -> None:
                 print("No summary generated", file=sys.stderr)
                 sys.exit(1)
         return
-
-    # TUI mode: sync token usage in background before launching
-    from ccui.usage import sync_all_sessions
-
-    sync_all_sessions()
 
     app = CcuiApp()
     app.run()
